@@ -48,7 +48,7 @@ export function EventCard({ event }: EventCardProps) {
 
   const handleRegisterClick = () => {
     if (user) {
-      router.push(`/comprar/${event.id}`)
+      router.push(`/register/${event.id}`)
     } else {
       router.push("/login")
     }

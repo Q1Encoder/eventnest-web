@@ -318,7 +318,7 @@ export default function EventDetailPage() {
 
                   {(!currentUser || event.createdBy !== currentUser.uid) && (
                     <Button asChild className="w-full" size="lg">
-                      <Link href={`/comprar/${event.id}`}>Regístrate Ahora</Link>
+                      <Link href={`/register/${event.id}`}>Regístrate Ahora</Link>
                     </Button>
                   )}
 

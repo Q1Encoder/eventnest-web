@@ -1,7 +1,10 @@
 "use client"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import type React from "react"
+import { getAuth, onAuthStateChanged } from "firebase/auth"
+import { doc, getDoc, collection, addDoc } from "firebase/firestore"
+import { db } from "@/lib/firebase"
 
 import { NavBar } from "@/components/nav-bar"
 import { Footer } from "@/components/footer"
@@ -77,24 +80,43 @@ export default function PurchasePage({ params }: { params: { id: string } }) {
     setProcessing(true)
 
     try {
-      // Simulate processing
-      await new Promise((resolve) => setTimeout(resolve, 2000))
+      const auth = getAuth()
+      const currentUser = auth.currentUser
 
-      // Generate ticket ID
-      const ticketId = `TKT-${new Date().getFullYear()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`
+      if (!currentUser) {
+        alert("Debes iniciar sesión para completar el registro.")
+        setProcessing(false)
+        return
+      }
 
-      console.log("Purchase data:", {
-        ...formData,
-        quantity,
-        total,
+      // Obtener los datos del evento desde Firebase
+      const eventDocRef = doc(db, "events", params.id)
+      const eventDoc = await getDoc(eventDocRef)
+
+      if (!eventDoc.exists()) {
+        alert("El evento no existe.")
+        setProcessing(false)
+        return
+      }
+
+      const eventData = eventDoc.data()
+
+      // Crear el registro en Firebase
+      const registrationData = {
+        userId: currentUser.uid,
         eventId: params.id,
-        ticketId,
-      })
+        eventOwnerId: eventData.createdBy || "unknown", // Asignar el ownerId del evento
+        confirmed: false,
+      }
 
-      // Redirect to payment slip page
-      router.push(`/ficha-pago/${ticketId}`)
+      await addDoc(collection(db, "registrations"), registrationData)
+
+      // Redirigir al dashboard del usuario
+      router.push("/dashboard")
     } catch (error) {
-      console.error("Purchase error:", error)
+      console.error("Error al completar el registro:", error)
+      alert("Hubo un error al completar el registro. Por favor, inténtalo de nuevo.")
+    } finally {
       setProcessing(false)
     }
   }
@@ -104,6 +126,35 @@ export default function PurchasePage({ params }: { params: { id: string } }) {
   }
 
   const availableSpots = mockEvent.capacity - mockEvent.registered
+
+  useEffect(() => {
+    const auth = getAuth()
+
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        try {
+          const userDocRef = doc(db, "users", user.uid)
+          const userDoc = await getDoc(userDocRef)
+
+          if (userDoc.exists()) {
+            const userData = userDoc.data()
+            setFormData((prev) => ({
+              ...prev,
+              firstName: userData.firstName || "",
+              lastName: userData.lastName || "",
+              email: userData.email || user.email || "",
+              phone: userData.phone || "",
+              company: userData.company || "",
+            }))
+          }
+        } catch (error) {
+          console.error("Error al cargar los datos del usuario:", error)
+        }
+      }
+    })
+
+    return () => unsubscribe()
+  }, [])
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -123,7 +174,7 @@ export default function PurchasePage({ params }: { params: { id: string } }) {
                 <CardContent>
                   <form onSubmit={handleSubmit} className="space-y-8">
                     {/* Ticket Quantity */}
-                    <div className="space-y-4">
+                    {/* <div className="space-y-4">
                       <h3 className="text-lg font-semibold">Seleccionar Boletos</h3>
                       <div className="flex items-center justify-between p-4 border rounded-lg">
                         <div>
@@ -155,7 +206,7 @@ export default function PurchasePage({ params }: { params: { id: string } }) {
                       <p className="text-sm text-gray-500">
                         Maximo {Math.min(5, availableSpots)} boletos por registro
                       </p>
-                    </div>
+                    </div> */}
 
                     {/* Personal Information */}
                     <div className="space-y-4">
@@ -236,7 +287,7 @@ export default function PurchasePage({ params }: { params: { id: string } }) {
                     </div>
 
                     {/* Payment Method Info */}
-                    <div className="space-y-4">
+                    {/* <div className="space-y-4">
                       <h3 className="text-lg font-semibold">Método de Pago</h3>
 
                       <Alert>
@@ -255,10 +306,10 @@ export default function PurchasePage({ params }: { params: { id: string } }) {
                           <li>• Tus boletos serán confirmados en un plazo de 1-2 días hábiles</li>
                         </ul>
                       </div>
-                    </div>
+                    </div> */}
 
                     {/* Terms and Conditions */}
-                    <div className="space-y-4">
+                    {/* <div className="space-y-4">
                       <div className="flex items-center space-x-2">
                         <Checkbox
                           id="agreeToTerms"
@@ -271,8 +322,8 @@ export default function PurchasePage({ params }: { params: { id: string } }) {
                           Acepto los términos y condiciones y la política de cancelación
                         </Label>
                       </div>
-                    </div>
-
+                    </div> */}
+                    {/* 
                     <Button type="submit" className="w-full" size="lg" disabled={!formData.agreeToTerms || processing}>
                       {processing ? (
                         <>
@@ -281,6 +332,16 @@ export default function PurchasePage({ params }: { params: { id: string } }) {
                         </>
                       ) : (
                         `Completar Registro - $${total.toFixed(2)} MXN`
+                      )}
+                    </Button> */}
+                    <Button type="submit" className="w-full" size="lg" disabled={processing}>
+                      {processing ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                          Procesando Registro...
+                        </>
+                      ) : (
+                        `Completar Registro`
                       )}
                     </Button>
                   </form>
@@ -331,7 +392,7 @@ export default function PurchasePage({ params }: { params: { id: string } }) {
               </Card>
 
               {/* Price Breakdown */}
-              <Card>
+              {/* <Card>
                 <CardHeader>
                   <CardTitle>Resumen de Precios</CardTitle>
                 </CardHeader>
@@ -344,7 +405,7 @@ export default function PurchasePage({ params }: { params: { id: string } }) {
                     {/* <div className="flex justify-between text-sm text-gray-600">
                       <span>Tarifa de servicio</span>
                       <span>${serviceFee.toFixed(2)}</span>
-                    </div> */}
+                    </div> 
                   </div>
 
                   <Separator />
@@ -359,7 +420,7 @@ export default function PurchasePage({ params }: { params: { id: string } }) {
                     <span>Pago seguro protegido por SSL</span>
                   </div>
                 </CardContent>
-              </Card>
+              </Card> */}
 
               {/* Availability Alert */}
               {availableSpots <= 20 && (
@@ -378,7 +439,7 @@ export default function PurchasePage({ params }: { params: { id: string } }) {
               )}
 
               {/* Payment Process Info */}
-              <Card>
+              {/* <Card>
                 <CardHeader>
                   <CardTitle>Próximos Pasos</CardTitle>
                 </CardHeader>
@@ -407,6 +468,34 @@ export default function PurchasePage({ params }: { params: { id: string } }) {
                         4
                       </div>
                       <p>Recibe tus boletos digitales por correo electrónico</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card> */}
+
+                <Card>
+                <CardHeader>
+                  <CardTitle>Próximos Pasos</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3 text-sm">
+                    <div className="flex items-start gap-2">
+                      <div className="w-5 h-5 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+                        1
+                      </div>
+                      <p>Completa este formulario de registro</p>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <div className="w-5 h-5 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+                        2
+                      </div>
+                      <p>Espera la confirmacion de tu registro</p>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <div className="w-5 h-5 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+                        3
+                      </div>
+                      <p>Recibe tu boleto digital en la seccion de boletos</p>
                     </div>
                   </div>
                 </CardContent>

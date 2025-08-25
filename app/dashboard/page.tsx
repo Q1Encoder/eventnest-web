@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { onAuthStateChanged } from "firebase/auth"
-import { doc, getDoc } from "firebase/firestore"
+import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore"
 import { auth, db } from "@/lib/firebase"
 import { NavBar } from "@/components/nav-bar"
 import { Footer } from "@/components/footer"
@@ -30,6 +30,8 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
+import { getAuth } from "firebase/auth"
+
 
 // Mock user data
 const userMockData = {
@@ -124,6 +126,7 @@ const userCertificates = [
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState("overview")
   const [userData, setUserData] = useState<any>(userMockData)
+  const [reservations, setReservations] = useState<any[]>([])
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -137,7 +140,7 @@ export default function DashboardPage() {
         } else {
           // Si no tienes más datos, usa los del auth
 
-          console.log("El susuario",user)
+          console.log("El susuario", user)
           setUserData({
             name: user.displayName || user.email,
             email: user.email,
@@ -148,9 +151,41 @@ export default function DashboardPage() {
     return () => unsubscribe()
   }, [])
 
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        try {
+          const reservationsQuery = query(
+            collection(db, "registrations"),
+            where("userId", "==", user.uid)
+          )
+          const querySnapshot = await getDocs(reservationsQuery)
+
+          const reservationsData = querySnapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }))
+
+          setReservations(reservationsData)
+        } catch (error) {
+          console.error("Error al cargar las reservas:", error)
+        }
+      } else {
+        console.error("Usuario no autenticado")
+      }
+    })
+
+    return () => unsubscribe()
+  }, [])
+
+
+
   const upcomingEvents = userEvents.filter((event) => new Date(event.date) > new Date() && event.status !== "cancelled")
   const completedEvents = userEvents.filter((event) => event.status === "completed")
   const pendingEvents = userEvents.filter((event) => event.status === "pending")
+
+  const pendingReservations = reservations.filter((reservation) => !reservation.confirmed)
+  const approvedReservations = reservations.filter((reservation) => reservation.confirmed)
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -356,13 +391,91 @@ export default function DashboardPage() {
                   </CardContent>
                 </Card> */}
 
-                {/* Pending Payments */}
-                {pendingEvents.length > 0 && (
+
+                {pendingReservations.length > 0 && (
                   <Card className="border-yellow-200 bg-yellow-50">
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2 text-yellow-800">
                         <AlertCircle className="h-5 w-5" />
-                        {/* Pagos Pendientes ({pendingEvents.length}) */}
+                        Pendientes de Aprobación ({pendingReservations.length})
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        {pendingReservations.map((reservation) => (
+                          <div
+                            key={reservation.id}
+                            className="flex items-center gap-4 p-4 bg-white border border-yellow-200 rounded-lg"
+                          >
+                            <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                              <AlertCircle className="h-6 w-6 text-yellow-600" />
+                            </div>
+                            <div className="flex-1">
+                              <h4 className="font-semibold">{reservation.eventTitle}</h4>
+                              <p className="text-sm text-gray-600">
+                                Fecha: {new Date(reservation.eventDate).toLocaleDateString()}
+                              </p>
+                              <p className="text-sm text-yellow-700 font-medium">
+                                Aprobación pendiente
+                              </p>
+                            </div>
+                            <Button size="sm" asChild>
+                              <Link href={`/eventos/${reservation.eventId}`}>
+                                Ver Evento
+                              </Link>
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {approvedReservations.length > 0 && (
+                  <Card className="border-green-200 bg-green-50">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-green-800">
+                        <CheckCircle className="h-5 w-5" />
+                        Aprobados ({approvedReservations.length})
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        {approvedReservations.map((reservation) => (
+                          <div
+                            key={reservation.id}
+                            className="flex items-center gap-4 p-4 bg-white border border-green-200 rounded-lg"
+                          >
+                            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                              <CheckCircle className="h-6 w-6 text-green-600" />
+                            </div>
+                            <div className="flex-1">
+                              <h4 className="font-semibold">{reservation.eventTitle}</h4>
+                              <p className="text-sm text-gray-600">
+                                Fecha: {new Date(reservation.eventDate).toLocaleDateString()}
+                              </p>
+                              <p className="text-sm text-green-700 font-medium">
+                                Aprobado
+                              </p>
+                            </div>
+                            <Button size="sm" asChild>
+                              <Link href={`/eventos/${reservation.eventId}`}>
+                                Ver Evento
+                              </Link>
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+                {/* Pending Payments */}
+                {/* {pendingEvents.length > 0 && (
+                  <Card className="border-yellow-200 bg-yellow-50">
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-yellow-800">
+                        <AlertCircle className="h-5 w-5" />
+                        {/* Pagos Pendientes ({pendingEvents.length}) *
                         Pendientes de Aprovación ({pendingEvents.length})
                       </CardTitle>
                     </CardHeader>
@@ -379,7 +492,7 @@ export default function DashboardPage() {
                             <div className="flex-1">
                               <h4 className="font-semibold">{event.title}</h4>
                               <p className="text-sm text-gray-600">
-                                {/* Registrado el {new Date(event.registrationDate).toLocaleDateString()} */}
+                                {/* Registrado el {new Date(event.registrationDate).toLocaleDateString()} *
                               </p>
                               <p className="text-sm text-yellow-700 font-medium">
                                 Pago requerido para confirmar la inscripción
@@ -396,7 +509,7 @@ export default function DashboardPage() {
                       </div>
                     </CardContent>
                   </Card>
-                )}
+                )} */}
 
                 {/* Recent Activity */}
                 {/* <Card>
