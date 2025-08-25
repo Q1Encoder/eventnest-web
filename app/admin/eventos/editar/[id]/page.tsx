@@ -1,8 +1,7 @@
 "use client"
 
 import type React from "react"
-
-import { useState, useEffect } from "react"
+import { useState, useEffect, use } from "react"
 import { useRouter } from "next/navigation"
 import { NavBar } from "@/components/nav-bar"
 import { Footer } from "@/components/footer"
@@ -32,83 +31,19 @@ import Link from "next/link"
 import { doc, getDoc, updateDoc } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 
-
-// Mock event data - in a real app, this would come from a database
-const mockEventData = {
-  id: "1",
-  title: "Web Development Conference 2025",
-  description:
-    "Join us for the most comprehensive web development conference of the year. Learn from industry experts, network with peers, and discover the latest trends in web development.",
-  date: "2025-03-15",
-  startTime: "09:00",
-  endTime: "17:00",
-  location: "Convention Center Mexico City",
-  address: "Av. Conscripto 311, Lomas de Sotelo, Miguel Hidalgo, 11200 Ciudad de México, CDMX",
-  capacity: 200,
-  price: 599,
-  status: "published", // draft, published, cancelled
-  category: "technology",
-  image: "/placeholder.svg?height=300&width=600",
-  agenda: [
-    {
-      id: "1",
-      time: "09:00",
-      title: "Registration & Welcome Coffee",
-      description: "Check-in and networking with fellow attendees",
-      duration: 60,
-      speaker: "",
-      location: "Main Lobby",
-    },
-    {
-      id: "2",
-      time: "10:00",
-      title: "Keynote: The Future of Web Development",
-      description: "Exploring emerging trends and technologies shaping the future of web development",
-      duration: 90,
-      speaker: "Dr. Sarah Johnson",
-      location: "Main Auditorium",
-    },
-    {
-      id: "3",
-      time: "11:30",
-      title: "React 19: What's New",
-      description: "Deep dive into the latest features and improvements in React 19",
-      duration: 90,
-      speaker: "Mike Chen",
-      location: "Room A",
-    },
-    {
-      id: "4",
-      time: "13:00",
-      title: "Lunch Break",
-      description: "Networking lunch with catered meals",
-      duration: 60,
-      speaker: "",
-      location: "Dining Hall",
-    },
-    {
-      id: "5",
-      time: "14:00",
-      title: "Next.js Performance Optimization",
-      description: "Best practices for optimizing Next.js applications for production",
-      duration: 90,
-      speaker: "Alex Rodriguez",
-      location: "Room B",
-    },
-  ],
-}
-
 interface AgendaItem {
   id: string
   time: string
   title: string
+  endTime: string
   description: string
   duration: number
   speaker: string
   location: string
 }
 
-export default function EditEventPage({ params }: { params: { id: string } }) {
+export default function EditEventPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params)
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -139,7 +74,7 @@ export default function EditEventPage({ params }: { params: { id: string } }) {
     const loadEventData = async () => {
       try {
         setLoading(true)
-        const docRef = doc(db, "events", params.id)
+        const docRef = doc(db, "events", id)
         const docSnap = await getDoc(docRef)
 
         if (docSnap.exists()) {
@@ -170,7 +105,7 @@ export default function EditEventPage({ params }: { params: { id: string } }) {
     }
 
     loadEventData()
-  }, [params.id])
+  }, [id])
 
   // Handle form changes
   const handleInputChange = (field: string, value: string | number) => {
@@ -256,7 +191,7 @@ export default function EditEventPage({ params }: { params: { id: string } }) {
     setSaving(true)
 
     try {
-      const docRef = doc(db, "events", params.id)
+      const docRef = doc(db, "events", id)
       await updateDoc(docRef, {
         ...formData,
         agenda,
@@ -332,7 +267,7 @@ export default function EditEventPage({ params }: { params: { id: string } }) {
                 {formData.status.charAt(0).toUpperCase() + formData.status.slice(1)}
               </Badge>
               <Button variant="outline" asChild>
-                <Link href={`/eventos/${params.id}`}>
+                <Link href={`/eventos/${id}`}>
                   <Eye className="h-4 w-4 mr-2" />
                   Preview
                 </Link>
@@ -579,6 +514,7 @@ export default function EditEventPage({ params }: { params: { id: string } }) {
                               <td className="border border-gray-200 p-2">{item.speaker || "N/A"}</td>
                               <td className="border border-gray-200 p-2">
                                 <Button
+                                  type="button"
                                   variant="outline"
                                   size="sm"
                                   onClick={() => openAgendaModal(index)}
@@ -649,7 +585,7 @@ export default function EditEventPage({ params }: { params: { id: string } }) {
                           <h4 className="font-medium mb-2">Agenda Preview</h4>
                           <div className="space-y-2">
                             {agenda.slice(0, 3).map((item, index) => (
-                              <div key={item.id} className="text-sm p-2 bg-gray-50 rounded">
+                              <div key={item.id || `agenda-preview-${index}`} className="text-sm p-2 bg-gray-50 rounded">
                                 <div className="font-medium">
                                   {item.time || "00:00"} - {item.endTime || "00:00"}: {item.title || `Session ${index + 1}`}
                                 </div>
@@ -739,10 +675,12 @@ export default function EditEventPage({ params }: { params: { id: string } }) {
                   </div>
                 </div>
                 <div className="flex justify-end gap-4 mt-6">
-                  <Button variant="outline" onClick={closeAgendaModal}>
+                  <Button variant="outline" type="button" onClick={closeAgendaModal}>
                     Cancel
                   </Button>
-                  <Button onClick={saveAgendaItem}>Save</Button>
+                  <Button type="button" onClick={saveAgendaItem}>
+                    Save
+                  </Button>
                 </div>
               </div>
             </div>
