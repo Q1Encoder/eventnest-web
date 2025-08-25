@@ -36,7 +36,7 @@ import { getAuth } from "firebase/auth"
 // Mock user data
 const userMockData = {
   name: "Juan Pérez",
-  email: "juan.perez@email.com",
+  email: "",
   avatar: "/placeholder.svg?height=80&width=80",
   joinDate: "2024-01-15",
   totalEvents: 12,

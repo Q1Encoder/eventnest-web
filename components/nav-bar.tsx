@@ -298,7 +298,7 @@ export function NavBar() {
                       <span>Perfil</span>
                     </Link>
                   </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
+                  {/* <DropdownMenuItem asChild>
                     <Link href="/boletos">
                       <Ticket className="mr-2 h-4 w-4" />
                       <span>Mis boletos</span>
@@ -314,7 +314,7 @@ export function NavBar() {
                   <DropdownMenuItem>
                     <Settings className="mr-2 h-4 w-4" />
                     <span>Configuraciones</span>
-                  </DropdownMenuItem>
+                  </DropdownMenuItem> */}
                   <DropdownMenuItem onClick={handleLogout}>
                     <LogOut className="mr-2 h-4 w-4" />
                     <span>Cerrar sesión</span>

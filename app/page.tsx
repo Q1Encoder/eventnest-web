@@ -191,14 +191,14 @@ export default function HomePage() {
 							<div className="text-center text-gray-500">No hay eventos destacados disponibles.</div>
 						)}
 
-						<div className="text-center">
+						{/* <div className="text-center">
 							<Button size="lg" asChild>
 								<Link href="/eventos">
 									Ver todos los eventos
 									<ArrowRight className="ml-2 h-5 w-5" />
 								</Link>
 							</Button>
-						</div>
+						</div> */}
 					</div>
 				</section>
 
@@ -341,14 +341,14 @@ export default function HomePage() {
 							<Button size="lg" variant="secondary" asChild className="text-lg px-8">
 								<Link href="/registro">Comenzar Gratis</Link>
 							</Button>
-							<Button
+							{/* <Button
 								size="lg"
 								variant="outline"
 								asChild
 								className="text-lg px-8 bg-transparent text-white border-white hover:bg-white hover:text-gray-900"
 							>
 								<Link href="/eventos">Ver Eventos</Link>
-							</Button>
+							</Button> */}
 						</div>
 					</div>
 				</section>
