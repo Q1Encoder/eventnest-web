@@ -42,6 +42,13 @@ interface AgendaItem {
   location: string
 }
 
+interface SpeakerItem {
+  id: string
+  name: string
+  role: string
+  avatar?: string
+}
+
 export default function EditEventPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
@@ -50,6 +57,9 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
   const [hasChanges, setHasChanges] = useState(false)
   const [isAgendaModalOpen, setIsAgendaModalOpen] = useState(false)
   const [currentAgendaItem, setCurrentAgendaItem] = useState<AgendaItem | null>(null)
+  const [speakers, setSpeakers] = useState<SpeakerItem[]>([])
+  const [isSpeakerModalOpen, setIsSpeakerModalOpen] = useState(false)
+  const [currentSpeaker, setCurrentSpeaker] = useState<SpeakerItem | null>(null)
 
   // Form state
   const [formData, setFormData] = useState({
@@ -94,6 +104,7 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
             image: eventData.image || "",
           })
           setAgenda(eventData.agenda || [])
+          setSpeakers(eventData.speakers || [])
         } else {
           console.error("Evento no encontrado")
         }
@@ -185,6 +196,49 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
     }
   }
 
+  // Open speaker modal
+  const openSpeakerModal = (index: number | null) => {
+    if (index === null) {
+      setCurrentSpeaker({
+        id: Date.now().toString(),
+        name: "",
+        role: "",
+        avatar: "",
+      })
+    } else {
+      setCurrentSpeaker(speakers[index])
+    }
+    setIsSpeakerModalOpen(true)
+  }
+
+  // Close speaker modal
+  const closeSpeakerModal = () => {
+    setIsSpeakerModalOpen(false)
+    setCurrentSpeaker(null)
+  }
+
+  // Save speaker
+  const saveSpeaker = () => {
+    if (currentSpeaker) {
+      const updatedSpeakers = [...speakers]
+      const index = updatedSpeakers.findIndex((item) => item.id === currentSpeaker.id)
+      if (index >= 0) {
+        updatedSpeakers[index] = currentSpeaker
+      } else {
+        updatedSpeakers.push(currentSpeaker)
+      }
+      setSpeakers(updatedSpeakers)
+      setHasChanges(true)
+      closeSpeakerModal()
+    }
+  }
+
+  // Remove speaker
+  const removeSpeaker = (index: number) => {
+    setSpeakers(speakers.filter((_, i) => i !== index))
+    setHasChanges(true)
+  }
+
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -195,6 +249,7 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
       await updateDoc(docRef, {
         ...formData,
         agenda,
+        speakers,
       })
 
       console.log("Evento actualizado:", { ...formData, agenda })
@@ -274,6 +329,74 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
               </Button>
             </div>
           </div>
+
+           <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  Speakers
+                </CardTitle>
+                <Button type="button" onClick={() => openSpeakerModal(null)} size="sm">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Speaker
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {speakers.length > 0 ? (
+                <table className="w-full border-collapse border border-gray-200">
+                  <thead>
+                    <tr className="bg-gray-100">
+                      <th className="border border-gray-200 p-2 text-left">Name</th>
+                      <th className="border border-gray-200 p-2 text-left">Role</th>
+                      <th className="border border-gray-200 p-2 text-left">Avatar</th>
+                      <th className="border border-gray-200 p-2 text-left">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {speakers.map((item, index) => (
+                      <tr key={item.id}>
+                        <td className="border border-gray-200 p-2">{item.name}</td>
+                        <td className="border border-gray-200 p-2">{item.role}</td>
+                        <td className="border border-gray-200 p-2">
+                          {item.avatar ? (
+                            <img src={item.avatar} alt={item.name} className="h-8 w-8 rounded-full" />
+                          ) : (
+                            "N/A"
+                          )}
+                        </td>
+                        <td className="border border-gray-200 p-2 flex gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openSpeakerModal(index)}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => removeSpeaker(index)}
+                          >
+                            Remove
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <Users className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                  <p>No speakers yet</p>
+                  <p className="text-sm">Click "Add Speaker" to create your first speaker</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Unsaved Changes Alert */}
           {hasChanges && (
@@ -625,6 +748,58 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
             </div>
           </form>
 
+         
+
+          {/* {isSpeakerModalOpen && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white p-6 rounded-lg shadow-lg w-96">
+                <h3 className="text-lg font-semibold mb-4">
+                  {currentSpeaker?.id ? "Edit Speaker" : "Add Speaker"}
+                </h3>
+                <div className="space-y-4">
+                  <div>
+                    <Label>Name</Label>
+                    <Input
+                      type="text"
+                      value={currentSpeaker?.name || ""}
+                      onChange={(e) =>
+                        setCurrentSpeaker((prev) => ({ ...prev!, name: e.target.value }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label>Role</Label>
+                    <Input
+                      type="text"
+                      value={currentSpeaker?.role || ""}
+                      onChange={(e) =>
+                        setCurrentSpeaker((prev) => ({ ...prev!, role: e.target.value }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label>Avatar URL</Label>
+                    <Input
+                      type="text"
+                      value={currentSpeaker?.avatar || ""}
+                      onChange={(e) =>
+                        setCurrentSpeaker((prev) => ({ ...prev!, avatar: e.target.value }))
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-4 mt-6">
+                  <Button variant="outline" type="button" onClick={closeSpeakerModal}>
+                    Cancel
+                  </Button>
+                  <Button type="button" onClick={saveSpeaker}>
+                    Save
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )} */}
+
           {/* Agenda Item Modal - Edit / Add */}
           {isAgendaModalOpen && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
@@ -685,6 +860,57 @@ export default function EditEventPage({ params }: { params: Promise<{ id: string
               </div>
             </div>
           )}
+
+          {/* Speaker Modal - Edit / Add */}
+     {isSpeakerModalOpen && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+    <div className="bg-white p-6 rounded-lg shadow-lg w-96">
+      <h3 className="text-lg font-semibold mb-4">
+        {currentSpeaker?.id ? "Edit Speaker" : "Add Speaker"}
+      </h3>
+      <div className="space-y-4">
+        <div>
+          <Label>Name</Label>
+          <Input
+            type="text"
+            value={currentSpeaker?.name || ""}
+            onChange={(e) =>
+              setCurrentSpeaker((prev) => ({ ...prev!, name: e.target.value }))
+            }
+          />
+        </div>
+        <div>
+          <Label>Role</Label>
+          <Input
+            type="text"
+            value={currentSpeaker?.role || ""}
+            onChange={(e) =>
+              setCurrentSpeaker((prev) => ({ ...prev!, role: e.target.value }))
+            }
+          />
+        </div>
+        <div>
+          <Label>Avatar URL</Label>
+          <Input
+            type="text"
+            value={currentSpeaker?.avatar || ""}
+            onChange={(e) =>
+              setCurrentSpeaker((prev) => ({ ...prev!, avatar: e.target.value }))
+            }
+          />
+        </div>
+      </div>
+      <div className="flex justify-end gap-4 mt-6">
+        <Button variant="outline" type="button" onClick={closeSpeakerModal}>
+          Cancel
+        </Button>
+        <Button type="button" onClick={saveSpeaker}>
+          Save
+        </Button>
+      </div>
+    </div>
+  </div>
+)}
         </div>
       </main>
       <Footer />
