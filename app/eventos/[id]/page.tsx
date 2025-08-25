@@ -9,70 +9,11 @@ import { Calendar, Clock, MapPin, Users, DollarSign, Share2, Heart, Speaker } fr
 import Link from "next/link"
 import Image from "next/image"
 import { useEffect, useState } from "react"
-import { doc, getDoc } from "firebase/firestore"
+import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { getAuth, onAuthStateChanged } from "firebase/auth"
 import { useParams } from "next/navigation"
 
-// Mock data - in a real app, this would come from a database
-const mockEvent = {
-  id: "1",
-  title: "XX CONGRESO NACIONAL Y 6TO CONGRESO INTERNACIONAL DE DERECHO",
-  description:
-    "Horizontes Jurídicos Transformando el Derecho",
-  longDescription: `
-    Únete al congreso "Horizontes Jurídicos: Transformando el Derecho", un espacio dedicado a la reflexión y análisis de los temas más relevantes y actuales del ámbito jurídico. Este evento reúne a expertos, académicos y profesionales para discutir los retos y oportunidades que enfrenta el derecho en un mundo en constante cambio.
-    A través de ponencias y paneles, se abordarán temas como la reforma electoral, los derechos humanos, los avances tecnológicos y su impacto en el derecho, así como innovaciones en el ámbito forense.
-    ¡Sé parte de las conversaciones que están transformando el futuro del derecho!
-  `,
-  date: "2025-10-28",
-  time: "08:00",
-  endTime: "19:00",
-  location: "Teatro de la Ciudad, La Paz B.C.S.",
-  fullAddress: "Antonio Navarro e/ Altamirano y H, de Independencia Centro, Zona Central, 23000 La Paz, B.C.S.",
-  price: 350,
-  image: "/portadaDerecho.png?height=400&width=800",
-  category: "Derecho",
-  capacity: 1143,
-  registered: 0,
-  organizer: "Universidad Autónoma de Baja California Sur, Campus La Paz",
-  speakers: [
-    { name: "Dr. David Cienfuegos Salgado", role: "El Derecho Frente al Suicidio: Abordaje Frente a los Derechos Humanos", avatar: "/david-cienfuegos.png?height=60&width=60" },
-    { name: "Dra. Lizbeth Xóchitl Padilla Sanabria", role: "La Inteligencia Artificial desde la Operatividad de los Derechos Humanos", avatar: "/lizbeth-xochitl.png?height=60&width=60" },
-    {
-      name: "Dr. Baldomero Mendoza López",
-      role: "La Representación Proporcional en México ante la Nueva Reforma Electoral",
-      avatar: "/baldomero-mendoza.png?height=60&width=60",
-    },
-    {
-      name: "Dra. Carla Pratt Corzo",
-      role: "Prisión Preventiva Oficiosa",
-      avatar: "/carla-pratt.png?height=60&width=60",
-    },
-    {
-      name: "Dr. Alejandro Hernández Cardenas Rodríguez",
-      role: "Rehidratación de Tejidos Blandos Presentes en Cadáveres Momificados y Reversión de Procesos Avanzados de Putrefacción con Fines Forenses de Identificación y Determinación de Causas de Muerte",
-      avatar: "/alejandro-hernandez.png?height=60&width=60",
-    },
-  ],
-  agenda: [
-    { time: "08:00", endTime: "09:00", title: "Registro" },
-    { time: "09:00", endTime: "09:30", title: "Sesión Inaugural" },
-    { time: "09:30", endTime: "09:40", title: "Receso" },
-    { time: "09:40", endTime: "10:30", title: "La Representación Proporcional en México ante la Nueva Refroma Electoral", speaker: "Dr. Baldomero Mendoza López" },
-    { time: "10:30", endTime: "10:50", title: "Ronda de Preguntas" },
-    { time: "10:50", endTime: "11:40", title: "La Inteligencia Artificial desde la Operatividad de los Derechos Humanos", speaker: "Dra. Lizbeth Xóchitl Padilla Sanabria" },
-    { time: "11:40", endTime: "12:00", title: "Ronda de Preguntas" },
-    { time: "12:00", endTime: "12:50", title: "Prisión Preventiva Oficiosa", speaker: "Dra. Carla Pratt Corzo" },
-    { time: "12:50", endTime: "13:10", title: "Ronda de Preguntas" },
-    { time: "13:10", endTime: "16:10", title: "Receso" },
-    { time: "16:10", endTime: "17:00", title: "El Derecho Frente al Suicidio: Abordaje Frente a los Derechos Humanos", speaker: "Dr. David Cienfuegos Salgado" },
-    { time: "17:00", endTime: "17:20", title: "Ronda de Preguntas" },
-    { time: "17:20", endTime: "18:10", title: "Rehidratación de Tejidos Blandos Presentes en Cadáveres Momificados y Reversión de Procesos Avanzados de Putrefacción con Fines Forenses de Identificación y Determinación de Causas de Muerte", speaker: "Dr. Alejandro Hernández Cardenas Rodríguez" },
-    { time: "18:10", endTime: "18:30", title: "Ronda de Preguntas" },
-    { time: "18:30", endTime: "18:50", title: "Clausura" },
-  ],
-}
 
 interface Speaker {
   name: string
@@ -92,6 +33,8 @@ export default function EventDetailPage() {
   const [event, setEvent] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [currentUser, setCurrentUser] = useState<any>(null)
+  const [isRegistered, setIsRegistered] = useState(false)
+  const [registeredCount, setRegisteredCount] = useState(0)
 
   useEffect(() => {
     // Cargar evento desde Firebase
@@ -108,13 +51,32 @@ export default function EventDetailPage() {
   }, [params.id])
 
   useEffect(() => {
-    // Detectar usuario autenticado
     const auth = getAuth()
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user)
+
+      if (user) {
+        try {
+          // Consulta en la colección "registrations" si el usuario ya está registrado en este evento
+          const registrationsQuery = query(
+            collection(db, "registrations"),
+            where("userId", "==", user.uid),
+            where("eventId", "==", params.id)
+          )
+          const querySnapshot = await getDocs(registrationsQuery)
+
+          // Si hay al menos un documento, significa que el usuario ya está registrado
+          if (!querySnapshot.empty) {
+            setIsRegistered(true)
+          }
+        } catch (error) {
+          console.error("Error al verificar el registro:", error)
+        }
+      }
     })
+
     return () => unsubscribe()
-  }, [])
+  }, [params.id])
 
   // const availableSpots = event.capacity - event.registered
     const availableSpots = event?.capacity
@@ -316,10 +278,16 @@ export default function EventDetailPage() {
                     </div>
                   </div>
 
-                  {(!currentUser || event.createdBy !== currentUser.uid) && (
+                  {!isRegistered && (!currentUser || event.createdBy !== currentUser.uid) && (
                     <Button asChild className="w-full" size="lg">
                       <Link href={`/register/${event.id}`}>Regístrate Ahora</Link>
                     </Button>
+                  )}
+
+                  {isRegistered && (
+                    <p className="text-center text-sm text-gray-500">
+                      Ya estás registrado en este evento.
+                    </p>
                   )}
 
                   {/* <p className="text-xs text-gray-500 text-center">Pago seguro • Confirmación instantánea</p> */}
