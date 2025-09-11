@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import { onAuthStateChanged } from "firebase/auth"
 import { auth } from "@/lib/firebase"
+import { useRegisteredCount } from "@/hooks/useRegistededCount"
 
 interface Event {
   id: string
@@ -29,12 +30,15 @@ interface EventCardProps {
 }
 
 export function EventCard({ event }: EventCardProps) {
-  const occupancyPercentage = (event.registered / event.capacity) * 100
-  const isAlmostFull = occupancyPercentage >= 80 && occupancyPercentage < 100
-  const isFull = occupancyPercentage >= 100
   const router = useRouter()
 
   const [user, setUser] = useState<any>(null)
+
+  const { count: registeredCount, loading: loadingRegistered } = useRegisteredCount(event.id)
+
+  const occupancyPercentage = (registeredCount / event.capacity) * 100
+  const isAlmostFull = occupancyPercentage >= 80 && occupancyPercentage < 100
+  const isFull = occupancyPercentage >= 100
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -96,7 +100,7 @@ export function EventCard({ event }: EventCardProps) {
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Users className="h-4 w-4" />
           <span>
-            {event.registered}/{event.capacity} registrados
+            {registeredCount}/{event.capacity} registrados
           </span>
         </div>
         <div className="flex items-center gap-2 text-sm font-semibold text-primary">

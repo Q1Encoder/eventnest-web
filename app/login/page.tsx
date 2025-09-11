@@ -39,7 +39,7 @@ export default function LoginPage() {
 
       // Redirige según el rol
       if (userData.role === "admin") {
-        router.push("/admin/dashboard")
+        router.push("/admin/usuarios")
       } else {
         router.push("/dashboard")
       }

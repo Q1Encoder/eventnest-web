@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { NavBar } from "@/components/nav-bar"
 import { Footer } from "@/components/footer"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,149 +12,108 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Users, Search, Filter, Mail, Phone, Building, Calendar, MoreHorizontal, UserPlus } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
-
-const mockUsers = [
-	{
-		id: "1",
-		firstName: "Juan",
-		lastName: "Pérez",
-		email: "juan.perez@email.com",
-		phone: "+52 55 1234 5678",
-		company: "Tech Solutions SA",
-		position: "Senior Developer",
-		registrationDate: "2024-11-15",
-		status: "Active",
-		eventsAttended: 5,
-		totalSpent: 2995,
-		avatar: "/placeholder.svg?height=40&width=40",
-		pending: true,
-		events: [
-			{
-				id: "e1",
-				name: "Conferencia de Desarrollo Web",
-				status: "pending",
-			},
-			{
-				id: "e2",
-				name: "Taller de IA",
-				status: "approved",
-			},
-      {
-				id: "e2",
-				name: "Taller de IA",
-				status: "approved",
-			},
-      {
-				id: "e2",
-				name: "Taller de IA",
-				status: "approved",
-			},
-      {
-				id: "e2",
-				name: "Taller de IA",
-				status: "approved",
-			},
-		],
-	},
-	{
-		id: "2",
-		firstName: "María",
-		lastName: "González",
-		email: "maria.gonzalez@email.com",
-		phone: "+52 55 2345 6789",
-		company: "Digital Marketing Pro",
-		position: "Marketing Manager",
-		registrationDate: "2024-10-20",
-		status: "Active",
-		eventsAttended: 3,
-		totalSpent: 1797,
-		avatar: "/placeholder.svg?height=40&width=40",
-	},
-	{
-		id: "3",
-		firstName: "Carlos",
-		lastName: "Mendoza",
-		email: "carlos.mendoza@email.com",
-		phone: "+52 55 3456 7890",
-		company: "AI Innovations",
-		position: "Data Scientist",
-		registrationDate: "2024-09-10",
-		status: "Active",
-		eventsAttended: 7,
-		totalSpent: 4193,
-		avatar: "/placeholder.svg?height=40&width=40",
-	},
-	{
-		id: "4",
-		firstName: "Ana",
-		lastName: "Rodríguez",
-		email: "ana.rodriguez@email.com",
-		phone: "+52 55 4567 8901",
-		company: "StartupXYZ",
-		position: "CEO",
-		registrationDate: "2024-08-05",
-		status: "Inactive",
-		eventsAttended: 2,
-		totalSpent: 798,
-		avatar: "/placeholder.svg?height=40&width=40",
-	},
-	{
-		id: "5",
-		firstName: "Luis",
-		lastName: "Martínez",
-		email: "luis.martinez@email.com",
-		phone: "+52 55 5678 9012",
-		company: "Data Corp",
-		position: "Business Analyst",
-		registrationDate: "2024-12-01",
-		status: "Active",
-		eventsAttended: 1,
-		totalSpent: 525,
-		avatar: "/placeholder.svg?height=40&width=40",
-	},
-	{
-		id: "6",
-		firstName: "Sofia",
-		lastName: "López",
-		email: "sofia.lopez@email.com",
-		phone: "+52 55 6789 0123",
-		company: "Design Studio",
-		position: "UX Designer",
-		registrationDate: "2024-07-12",
-		status: "Active",
-		eventsAttended: 4,
-		totalSpent: 2700,
-		avatar: "/placeholder.svg?height=40&width=40",
-	},
-]
+import { collection, query, where, getDocs, updateDoc, doc, getDoc, deleteDoc } from "firebase/firestore"
+import { db } from "@/lib/firebase"
 
 export default function AdminUsersPage() {
+	const [attendees, setAttendees] = useState<any[]>([])
+	const [search, setSearch] = useState("")
+	const [statusFilter, setStatusFilter] = useState("all")
+	const [sortBy, setSortBy] = useState("name")
 	const [selectedUser, setSelectedUser] = useState<any>(null)
 	const [modalOpen, setModalOpen] = useState(false)
+	const [currentPage, setCurrentPage] = useState(1)
+	const [rowsPerPage, setRowsPerPage] = useState(5)
 
-	const totalUsers = mockUsers.length
-	const activeUsers = mockUsers.filter((user) => user.status === "Active").length
-	const inactiveUsers = mockUsers.filter((user) => user.status === "Inactive").length
-	const totalRevenue = mockUsers.reduce((sum, user) => sum + user.totalSpent, 0)
+	// Cargar asistentes
+	useEffect(() => {
+		async function fetchAttendees() {
+			const q = query(collection(db, "registrations"))
+			const snapshot = await getDocs(q)
+			const registrations = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+
+			// Traer datos de usuario
+			const userPromises = registrations.map(async (reg) => {
+				const userRef = doc(db, "users", reg.userId)
+				const userSnap = await getDoc(userRef)
+				return {
+					...reg,
+					user: userSnap.exists() ? userSnap.data() : {},
+				}
+			})
+
+			const registrationsWithUser = await Promise.all(userPromises)
+			setAttendees(registrationsWithUser)
+		}
+		fetchAttendees()
+	}, [])
+
+	// Aprobar o rechazar usuario
+	const handleApprove = async (registrationId: string) => {
+		await updateDoc(doc(db, "registrations", registrationId), { confirmed: true })
+		setAttendees((prev) =>
+			prev.map((a) => (a.id === registrationId ? { ...a, confirmed: true } : a))
+		)
+	}
+	const handleReject = async (registrationId: string) => {
+		await updateDoc(doc(db, "registrations", registrationId), { confirmed: false })
+		setAttendees((prev) =>
+			prev.map((a) => (a.id === registrationId ? { ...a, confirmed: false } : a))
+		)
+	}
+	const handleDelete = async (registrationId: string) => {
+		await deleteDoc(doc(db, "registrations", registrationId))
+		setAttendees((prev) => prev.filter((a) => a.id !== registrationId))
+	}
+
+	const totalUsers = attendees.length
+	const activeUsers = attendees.filter((user) => user.status === "Active").length
+	const inactiveUsers = attendees.filter((user) => user.status === "Inactive").length
+	const totalRevenue = attendees.reduce((sum, user) => sum + user.totalSpent, 0)
 	const averageSpent = Math.round(totalRevenue / totalUsers)
 
+	// Filtros y búsqueda
+	const filteredAttendees = attendees
+		.filter(
+			(att) =>
+				// Excluye a los administradores
+				att.user.role !== "admin" &&
+				(statusFilter === "all" ||
+					(statusFilter === "active" && att.confirmed) ||
+					(statusFilter === "inactive" && !att.confirmed)) &&
+				`${att.user.firstName ?? ""} ${att.user.lastName ?? ""} ${att.user.email ?? ""}`
+					.toLowerCase()
+					.includes(search.toLowerCase())
+		)
+		.sort((a, b) => {
+			if (sortBy === "name") return (a.user.firstName ?? "").localeCompare(b.user.firstName ?? "")
+			if (sortBy === "date") return (a.registrationDate ?? "").localeCompare(b.registrationDate ?? "")
+			return 0
+		})
+
+	const totalPages = Math.ceil(filteredAttendees.length / rowsPerPage)
+	const paginatedAttendees = filteredAttendees.slice(
+		(currentPage - 1) * rowsPerPage,
+		currentPage * rowsPerPage
+	)
+
 	// Funciones para aprobar/rechazar evento (mock)
-	const handleApprove = (eventId: string) => {
+	const handleEventApprove = (eventId: string) => {
 		setSelectedUser((prev: any) => ({
 			...prev,
-			events: prev.events.map((ev: any) =>
-				ev.id === eventId ? { ...ev, status: "approved" } : ev
-			),
+			events: prev.events.map((ev: any) => (ev.id === eventId ? { ...ev, status: "approved" } : ev)),
 		}))
 	}
-	const handleReject = (eventId: string) => {
+	const handleEventReject = (eventId: string) => {
 		setSelectedUser((prev: any) => ({
 			...prev,
-			events: prev.events.map((ev: any) =>
-				ev.id === eventId ? { ...ev, status: "rejected" } : ev
-			),
+			events: prev.events.map((ev: any) => (ev.id === eventId ? { ...ev, status: "rejected" } : ev)),
 		}))
 	}
+
+	useEffect(() => {
+		setCurrentPage(1)
+	}, [search, statusFilter, sortBy, rowsPerPage])
 
 	return (
 		<div className="flex min-h-screen flex-col">
@@ -163,13 +122,13 @@ export default function AdminUsersPage() {
 				<div className="container mx-auto px-4">
 					<div className="flex justify-between items-center mb-8">
 						<div>
-							<h1 className="text-3xl font-bold mb-2">User Management</h1>
-							<p className="text-gray-600">Manage registered users and their activity</p>
+							<h1 className="text-3xl font-bold mb-2">Administracion de Usuarios</h1>
+							<p className="text-gray-600">Gestionar usuarios registrados y su actividad</p>
 						</div>
-						<Button>
+						{/* <Button>
 							<UserPlus className="h-4 w-4 mr-2" />
-							Add User
-						</Button>
+							Agregar Usuario
+						</Button> */}
 					</div>
 
 					{/* Statistics */}
@@ -178,7 +137,7 @@ export default function AdminUsersPage() {
 							<CardContent className="p-6">
 								<div className="flex items-center justify-between">
 									<div>
-										<p className="text-sm font-medium text-gray-600">Total Users</p>
+										<p className="text-sm font-medium text-gray-600">Total de Usuarios</p>
 										<p className="text-2xl font-bold">{totalUsers}</p>
 									</div>
 									<Users className="h-8 w-8 text-blue-600" />
@@ -190,7 +149,7 @@ export default function AdminUsersPage() {
 							<CardContent className="p-6">
 								<div className="flex items-center justify-between">
 									<div>
-										<p className="text-sm font-medium text-gray-600">Active Users</p>
+										<p className="text-sm font-medium text-gray-600">Usuarios Activos</p>
 										<p className="text-2xl font-bold">{activeUsers}</p>
 									</div>
 									<Users className="h-8 w-8 text-green-600" />
@@ -202,8 +161,8 @@ export default function AdminUsersPage() {
 							<CardContent className="p-6">
 								<div className="flex items-center justify-between">
 									<div>
-										<p className="text-sm font-medium text-gray-600">Total Revenue</p>
-										<p className="text-2xl font-bold">${totalRevenue.toLocaleString()}</p>
+										<p className="text-sm font-medium text-gray-600">Total de Ingresos</p>
+										{/* <p className="text-2xl font-bold">${totalRevenue.toLocaleString()}</p> */}
 									</div>
 									<Calendar className="h-8 w-8 text-purple-600" />
 								</div>
@@ -214,7 +173,7 @@ export default function AdminUsersPage() {
 							<CardContent className="p-6">
 								<div className="flex items-center justify-between">
 									<div>
-										<p className="text-sm font-medium text-gray-600">Avg. Spent</p>
+										<p className="text-sm font-medium text-gray-600">Promedio Gastado</p>
 										<p className="text-2xl font-bold">${averageSpent}</p>
 									</div>
 									<Building className="h-8 w-8 text-orange-600" />
@@ -229,32 +188,38 @@ export default function AdminUsersPage() {
 							<div className="flex flex-col md:flex-row gap-4">
 								<div className="relative flex-1">
 									<Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-									<Input placeholder="Search users..." className="pl-10" />
+									<Input
+										placeholder="Search users..."
+										className="pl-10"
+										value={search}
+										onChange={e => setSearch(e.target.value)}
+									/>
 								</div>
-								<Select>
+
+								<Select value={statusFilter} onValueChange={setStatusFilter}>
 									<SelectTrigger className="w-full md:w-48">
 										<SelectValue placeholder="Status" />
 									</SelectTrigger>
 									<SelectContent>
-										<SelectItem value="all">All Status</SelectItem>
-										<SelectItem value="active">Active</SelectItem>
-										<SelectItem value="inactive">Inactive</SelectItem>
+										<SelectItem value="all">Todos</SelectItem>
+										<SelectItem value="active">Aprobados</SelectItem>
+										<SelectItem value="inactive">Pendientes</SelectItem>
 									</SelectContent>
 								</Select>
-								<Select>
+
+								<Select value={sortBy} onValueChange={setSortBy}>
 									<SelectTrigger className="w-full md:w-48">
 										<SelectValue placeholder="Sort by" />
 									</SelectTrigger>
 									<SelectContent>
-										<SelectItem value="name">Name</SelectItem>
-										<SelectItem value="date">Registration Date</SelectItem>
-										<SelectItem value="events">Events Attended</SelectItem>
-										<SelectItem value="spent">Total Spent</SelectItem>
+										<SelectItem value="name">Nombre</SelectItem>
+										<SelectItem value="date">Fecha de Registro</SelectItem>
 									</SelectContent>
 								</Select>
+
 								<Button variant="outline" className="w-full md:w-auto bg-transparent">
 									<Filter className="h-4 w-4 mr-2" />
-									More Filters
+									Mas Filtros
 								</Button>
 							</div>
 						</CardContent>
@@ -263,120 +228,145 @@ export default function AdminUsersPage() {
 					{/* Users List */}
 					<Card>
 						<CardHeader>
-							<CardTitle>All Users</CardTitle>
+							<CardTitle>Todos los Usuarios</CardTitle>
 						</CardHeader>
 						<CardContent>
-							<div className="space-y-4">
-								{mockUsers.map((user) => (
-									<div
-										key={user.id}
-										className="flex items-center justify-between p-4 border rounded-lg hover:shadow-md transition-shadow"
-									>
-										<div className="flex items-center gap-4 flex-1">
-											<Avatar className="h-12 w-12">
-												<AvatarImage
-													src={user.avatar || "/placeholder.svg"}
-													alt={`${user.firstName} ${user.lastName}`}
-												/>
-												<AvatarFallback>
-													{user.firstName.charAt(0)}
-													{user.lastName.charAt(0)}
-												</AvatarFallback>
-											</Avatar>
-
-											<div className="flex-1">
-												<div className="flex items-center gap-3 mb-2">
-													<h3 className="font-semibold text-lg">
-														{user.firstName} {user.lastName}
-													</h3>
-													<Badge
-														variant={user.status === "Active" ? "secondary" : "outline"}
-														className={
-															user.status === "Active"
-																? "text-green-600 bg-green-50"
-																: "text-gray-600 bg-gray-50"
-														}
-													>
-														{user.status}
-													</Badge>
-													{user.pending && (
-														<Badge variant="alert" className="ml-2">
+							<div className="overflow-x-auto">
+								<table className="min-w-full border border-gray-200 rounded-lg">
+									<thead className="bg-gray-100">
+										<tr>
+											<th className="p-2 border-b text-left">Nombre</th>
+											<th className="p-2 border-b text-left">Email</th>
+											<th className="p-2 border-b text-left">Estado</th>
+											<th className="p-2 border-b text-left">Acciones</th>
+										</tr>
+									</thead>
+									<tbody>
+										{paginatedAttendees.map((att) => (
+											<tr
+												key={att.id}
+												className={
+													att.confirmed === true
+														? "bg-green-50"
+														: att.confirmed === false
+														? "bg-yellow-50"
+														: "bg-red-50"
+												}
+											>
+												<td className="p-2 border-b flex items-center gap-2">
+													<Avatar className="h-8 w-8">
+														<AvatarImage
+															src={att.user.avatar || "/placeholder.svg"}
+															alt={`${att.user.firstName} ${att.user.lastName}`}
+														/>
+														<AvatarFallback>
+															{att.user.firstName?.charAt(0)}
+															{att.user.lastName?.charAt(0)}
+														</AvatarFallback>
+													</Avatar>
+													<span>
+														{att.user.firstName} {att.user.lastName}
+													</span>
+												</td>
+												<td className="p-2 border-b">{att.user.email}</td>
+												<td className="p-2 border-b">
+													{att.confirmed === true ? (
+														<Badge variant="secondary" className="bg-green-200 text-green-800">
+															Aprobado
+														</Badge>
+													) : att.confirmed === false ? (
+														<Badge variant="secondary" className="bg-yellow-200 text-yellow-800">
 															Pendiente
 														</Badge>
+													) : (
+														<Badge variant="destructive" className="bg-red-200 text-red-800">
+															Rechazado
+														</Badge>
 													)}
-												</div>
+												</td>
+												<td className="p-2 border-b">
+													{att.confirmed === false ? (
+														<>
+															<Button
+																size="sm"
+																variant="secondary"
+																className="mr-2"
+																onClick={() => handleApprove(att.id)}
+															>
+																Aprobar
+															</Button>
+															<Button
+																size="sm"
+																variant="destructive"
+																className="mr-2"
+																onClick={() => handleReject(att.id)}
+															>
+																Rechazar
+															</Button>
+														</>
+													) : att.confirmed === true ? (
+														<span className="text-green-600 font-semibold mr-2">✔</span>
+													) : (
+														<span className="text-red-600 font-semibold mr-2">✖</span>
+													)}
+													{/* <Button
+														size="sm"
+														variant="outline"
+														onClick={() => handleDelete(att.id)}
+													>
+														Eliminar
+													</Button> */}
+												</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+								{filteredAttendees.length === 0 && (
+									<div className="text-center text-gray-500 py-8">No se encontraron usuarios.</div>
+								)}
+							</div>
 
-												<div className="grid gap-2 md:grid-cols-2 text-sm text-gray-600">
-													<div className="flex items-center gap-2">
-														<Mail className="h-4 w-4" />
-														<span>{user.email}</span>
-													</div>
-													<div className="flex items-center gap-2">
-														<Phone className="h-4 w-4" />
-														<span>{user.phone}</span>
-													</div>
-													<div className="flex items-center gap-2">
-														<Building className="h-4 w-4" />
-														<span>{user.company}</span>
-													</div>
-													<div className="flex items-center gap-2">
-														<Calendar className="h-4 w-4" />
-														<span>
-															Joined{" "}
-															{new Date(user.registrationDate).toLocaleDateString()}
-														</span>
-													</div>
-												</div>
+							<div className="flex items-center justify-between mb-2">
+								<div>
+									<label className="mr-2 text-sm">Usuarios por página:</label>
+									<select
+										className="border rounded px-2 py-1 text-sm"
+										value={rowsPerPage}
+										onChange={e => {
+											setRowsPerPage(Number(e.target.value))
+											setCurrentPage(1)
+										}}
+									>
+										<option value={5}>5</option>
+										<option value={10}>10</option>
+										<option value={15}>15</option>
+									</select>
+								</div>
+								<div className="text-sm text-gray-500">
+									Página {currentPage} de {totalPages}
+								</div>
+							</div>
 
-												<div className="flex items-center gap-6 mt-2 text-sm">
-													<span className="font-medium">
-														Position:{" "}
-														<span className="text-gray-600">{user.position}</span>
-													</span>
-													<span className="font-medium">
-														Events:{" "}
-														<span className="text-blue-600">{user.eventsAttended}</span>
-													</span>
-													<span className="font-medium">
-														Total Spent:{" "}
-														<span className="text-green-600">
-															${user.totalSpent.toLocaleString()}
-														</span>
-													</span>
-												</div>
-											</div>
-										</div>
-
-										<div className="flex items-center gap-2">
-											<Button
-												variant="outline"
-												size="sm"
-												onClick={() => {
-													setSelectedUser(user)
-													setModalOpen(true)
-												}}
-											>
-												View Profile
-											</Button>
-											<DropdownMenu>
-												<DropdownMenuTrigger asChild>
-													<Button variant="outline" size="sm">
-														<MoreHorizontal className="h-4 w-4" />
-													</Button>
-												</DropdownMenuTrigger>
-												<DropdownMenuContent align="end">
-													<DropdownMenuItem>Send Email</DropdownMenuItem>
-													<DropdownMenuItem>View Events</DropdownMenuItem>
-													<DropdownMenuItem>Edit User</DropdownMenuItem>
-													<DropdownMenuItem>Export Data</DropdownMenuItem>
-													<DropdownMenuItem className="text-red-600">
-														Deactivate User
-													</DropdownMenuItem>
-												</DropdownMenuContent>
-											</DropdownMenu>
-										</div>
-									</div>
-								))}
+							<div className="flex justify-center items-center gap-2 mt-4">
+								<Button
+									size="sm"
+									variant="outline"
+									disabled={currentPage === 1}
+									onClick={() => setCurrentPage(currentPage - 1)}
+								>
+									Anterior
+								</Button>
+								<span className="text-sm">
+									{currentPage} / {totalPages}
+								</span>
+								<Button
+									size="sm"
+									variant="outline"
+									disabled={currentPage === totalPages || totalPages === 0}
+									onClick={() => setCurrentPage(currentPage + 1)}
+								>
+									Siguiente
+								</Button>
 							</div>
 						</CardContent>
 					</Card>
@@ -404,8 +394,8 @@ export default function AdminUsersPage() {
 										alt={`${selectedUser.firstName} ${selectedUser.lastName}`}
 									/>
 									<AvatarFallback>
-										{selectedUser.firstName.charAt(0)}
-										{selectedUser.lastName.charAt(0)}
+										{/* {selectedUser.firstName.charAt(0)}
+										{selectedUser.lastName.charAt(0)} */}
 									</AvatarFallback>
 								</Avatar>
 								<div>
@@ -447,7 +437,7 @@ export default function AdminUsersPage() {
 														size="sm"
 														className="ml-2"
 														variant="secondary"
-														onClick={() => handleApprove(event.id)}
+														onClick={() => handleEventApprove(event.id)}
 													>
 														Aprobar
 													</Button>
@@ -455,7 +445,7 @@ export default function AdminUsersPage() {
 														size="sm"
 														className="ml-2"
 														variant="destructive"
-														onClick={() => handleReject(event.id)}
+														onClick={() => handleEventReject(event.id)}
 													>
 														Rechazar
 													</Button>
