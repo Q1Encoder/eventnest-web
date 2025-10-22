@@ -2,110 +2,66 @@
 
 import { useEffect, useState } from "react"
 import { onAuthStateChanged } from "firebase/auth"
-import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore"
+import { doc, getDoc, collection, query, where, onSnapshot } from "firebase/firestore"
 import { auth, db } from "@/lib/firebase"
 import { NavBar } from "@/components/nav-bar"
 import { Footer } from "@/components/footer"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Progress } from "@/components/ui/progress"
-import {
-  Calendar,
-  MapPin,
-  Clock,
-  Award,
-  Download,
-  Eye,
-  Ticket,
-  TrendingUp,
-  Star,
-  Edit,
-  Settings,
-  CheckCircle,
-  AlertCircle,
-  XCircle,
-} from "lucide-react"
+import { Calendar, MapPin, Clock, Award, Download, Eye, Ticket, AlertCircle, CheckCircle, XCircle } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
-import { getAuth } from "firebase/auth"
+import { useToast } from "@/components/ui/use-toast"
+import { Skeleton } from "@/components/ui/skeleton"
 
-
-// Mock user data
-const userMockData = {
-  name: "Juan Pérez",
-  email: "",
-  avatar: "/placeholder.svg?height=80&width=80",
-  joinDate: "2024-01-15",
-  totalEvents: 12,
-  totalSpent: 6750,
-  points: 1250,
-  level: "Gold",
+// Interfaces para tipado
+interface UserData {
+  uid: string
+  email: string
+  firstName?: string
+  name?: string
+  avatar?: string
 }
 
-// Mock user events with different statuses
-const userEvents = [
-  {
-    id: "1",
-    title: "Web Development Conference 2025",
-    date: "2025-03-15",
-    time: "09:00",
-    location: "Convention Center Mexico City",
-    status: "confirmed", // confirmed, pending, cancelled
-    ticketId: "TKT-2025-001",
-    price: 599,
-    image: "/placeholder.svg?height=200&width=300",
-    paymentStatus: "paid",
-    registrationDate: "2025-01-15",
-  },
-  {
-    id: "2",
-    title: "Digital Marketing Summit",
-    date: "2025-04-20",
-    time: "10:00",
-    location: "Business Center Guadalajara",
-    status: "pending",
-    ticketId: "TKT-2025-002",
-    price: 450,
-    image: "/placeholder.svg?height=200&width=300",
-    paymentStatus: "pending",
-    registrationDate: "2025-01-18",
-  },
-  {
-    id: "3",
-    title: "AI & Machine Learning Workshop",
-    date: "2024-12-10",
-    time: "14:00",
-    location: "Tech Hub Monterrey",
-    status: "completed",
-    ticketId: "TKT-2024-003",
-    price: 750,
-    image: "/placeholder.svg?height=200&width=300",
-    rating: 4,
-    certificateAvailable: true,
-    paymentStatus: "paid",
-    registrationDate: "2024-11-15",
-  },
-  {
-    id: "4",
-    title: "UX Design Bootcamp",
-    date: "2024-11-25",
-    time: "09:00",
-    location: "Design Studio CDMX",
-    status: "completed",
-    ticketId: "TKT-2024-004",
-    price: 899,
-    image: "/placeholder.svg?height=200&width=300",
-    rating: 5,
-    certificateAvailable: true,
-    paymentStatus: "paid",
-    registrationDate: "2024-10-20",
-  },
-]
+interface EventData {
+  title: string
+  date?: string
+  time?: string
+  location?: string
+  address?: string
+  image?: string
+}
 
-// Mock certificates
+interface Reservation {
+  id: string
+  userId: string
+  eventId: string
+  confirmed: boolean
+  eventTitle: string
+  eventDate?: string
+  eventTime?: string
+  eventLocation?: string
+  eventAddress?: string
+  eventImage: string
+}
+
+interface AttendedEvent {
+  id: string
+  eventTitle: string
+  eventDate?: string
+  eventTime?: string
+  eventLocation?: string
+  eventAddress?: string
+  eventImage: string
+  checkInTime?: string
+  ticketId: string
+  status: "completed"
+}
+
+// Mock certificates (intacto como pediste)
 const userCertificates = [
   {
     id: "1",
@@ -123,70 +79,197 @@ const userCertificates = [
   },
 ]
 
+// Componente reutilizable para tarjetas de eventos/reservas
+const EventCard = ({
+  item,
+  type,
+  getStatusIcon,
+  getStatusBadge,
+}: {
+  item: Reservation | AttendedEvent
+  type: "reservation" | "attended"
+  getStatusIcon: (status: string) => React.ReactNode
+  getStatusBadge: (status: string) => React.ReactNode
+}) => {
+  const status = "status" in item ? item.status : item.confirmed ? "confirmed" : "pending"
+
+  return (
+    <div className="flex items-center gap-4 p-4 bg-white border rounded-lg">
+      <div
+        className={`w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0 ${
+          type === "reservation" && "confirmed" in item && !item.confirmed
+            ? "bg-yellow-100 border-yellow-200"
+            : "bg-green-100 border-green-200"
+        }`}
+      >
+        {getStatusIcon(status)}
+      </div>
+      <div className="flex-1">
+        <h4 className="font-semibold">{item.eventTitle}</h4>
+        <p className="text-sm text-gray-600">
+          Fecha: {item.eventDate ? new Date(item.eventDate).toLocaleDateString() : "Sin fecha"}
+        </p>
+        {type === "attended" && "checkInTime" in item && (
+          <p className="text-sm text-gray-600">
+            Check-in: {item.checkInTime ? new Date(item.checkInTime).toLocaleString() : "Sin datos"}
+          </p>
+        )}
+        <div className="text-sm font-medium">
+          {getStatusBadge(status)}
+        </div>
+      </div>
+      {(type === "reservation" && "confirmed" in item && item.confirmed) || type === "attended" ? (
+        <Button size="sm" asChild>
+          <Link href={type === "reservation" ? `/boletos/${item.id}` : `/eventos/${item.id}`}>
+            {type === "reservation" ? "Ver Boleto" : "Ver Evento"}
+          </Link>
+        </Button>
+      ) : null}
+    </div>
+  )
+}
+
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState("overview")
-  const [userData, setUserData] = useState<any>(userMockData)
-  const [reservations, setReservations] = useState<any[]>([])
+  const [userData, setUserData] = useState<UserData | null>(null)
+  const [reservations, setReservations] = useState<Reservation[]>([])
+  const [attendedEvents, setAttendedEvents] = useState<AttendedEvent[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const { toast } = useToast()
+
+  // Cache para evitar múltiples consultas a /events
+  const eventCache = new Map<string, EventData>()
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        // Obtén datos adicionales desde Firestore si los tienes guardados ahí
-        const userDoc = await getDoc(doc(db, "users", user.uid))
-        if (userDoc.exists()) {
-          // Si tienes más datos del usuario en Firestore, úsalos
-          console.log("Datos del usuario desde Firestore:", userDoc.data())
-          setUserData(userDoc.data())
-        } else {
-          // Si no tienes más datos, usa los del auth
-
-          console.log("El susuario", user)
-          setUserData({
-            name: user.displayName || user.email,
-            email: user.email,
-          })
-        }
-      }
-    })
-    return () => unsubscribe()
-  }, [])
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setIsLoading(true)
       if (user) {
         try {
+          // Obtener datos del usuario desde /users
+          const userDoc = await getDoc(doc(db, "users", user.uid))
+          if (userDoc.exists()) {
+            setUserData({
+              ...userDoc.data(),
+              uid: user.uid,
+              email: user.email,
+            } as UserData)
+          } else {
+            setUserData({
+              name: user.displayName || user.email || "Usuario",
+              email: user.email || "",
+              uid: user.uid,
+            })
+          }
+
+          // Escuchar reservas en tiempo real desde /registrations
           const reservationsQuery = query(
             collection(db, "registrations"),
             where("userId", "==", user.uid)
           )
-          const querySnapshot = await getDocs(reservationsQuery)
+          onSnapshot(reservationsQuery, async (snapshot) => {
+            const reservationsData = await Promise.all(
+              snapshot.docs.map(async (reservationDoc) => {
+                const data = reservationDoc.data()
+                let eventData: EventData | undefined
+                if (eventCache.has(data.eventId)) {
+                  eventData = eventCache.get(data.eventId)
+                } else {
+                  const eventDoc = await getDoc(doc(db, "events", data.eventId))
+                  eventData = eventDoc.exists()
+                    ? (eventDoc.data() as EventData)
+                    : { title: "Evento desconocido", image: "/placeholder.svg" }
+                  eventCache.set(data.eventId, eventData)
+                }
+                return {
+                  id: reservationDoc.id,
+                  ...data,
+                  eventTitle: eventData?.title ?? "Evento sin título",
+                  eventDate: eventData?.date,
+                  eventTime: eventData?.time,
+                  eventLocation: eventData?.location,
+                  eventAddress: eventData?.address,
+                  eventImage: eventData?.image || "/placeholder.svg",
+                } as Reservation
+              })
+            )
+            setReservations(reservationsData)
+          }, (error) => {
+            toast({
+              title: "Error",
+              description: "No se pudieron cargar las reservas. Intenta de nuevo.",
+              variant: "destructive",
+            })
+          })
 
-          const reservationsData = querySnapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          }))
-
-          setReservations(reservationsData)
+          // Escuchar eventos con check-in desde /assistance
+          const assistanceQuery = query(
+            collection(db, "assistance"),
+            where("checkIn", "==", true)
+          )
+          onSnapshot(assistanceQuery, async (snapshot) => {
+            const attendedEventsData = await Promise.all(
+              snapshot.docs.map(async (assistanceDoc) => {
+                const data = assistanceDoc.data()
+                const registrationDoc = await getDoc(doc(db, "registrations", data.ticket))
+                const registrationData = registrationDoc.data() as { userId: string; eventId: string }
+                if (registrationDoc.exists() && registrationData.userId === user.uid) {
+                  let eventData: EventData | undefined
+                  if (eventCache.has(registrationData.eventId)) {
+                    eventData = eventCache.get(registrationData.eventId)
+                  } else {
+                    const eventDoc = await getDoc(doc(db, "events", registrationData.eventId))
+                    eventData = eventDoc.exists()
+                      ? (eventDoc.data() as EventData)
+                      : { title: "Evento desconocido", image: "/placeholder.svg" }
+                    eventCache.set(registrationData.eventId, eventData)
+                  }
+                  return {
+                    id: data.ticket,
+                    eventTitle: eventData?.title || "Evento sin título",
+                    eventDate: eventData?.date,
+                    eventTime: eventData?.time,
+                    eventLocation: eventData?.location,
+                    eventAddress: eventData?.address,
+                    eventImage: eventData?.image || "/placeholder.svg",
+                    checkInTime: data.checkInTime,
+                    ticketId: data.ticket,
+                    status: "completed" as const,
+                  } as AttendedEvent
+                }
+                return null
+              })
+            )
+            setAttendedEvents(attendedEventsData.filter((event): event is AttendedEvent => event !== null))
+          }, (error) => {
+            toast({
+              title: "Error",
+              description: "No se pudieron cargar los eventos asistidos. Intenta de nuevo.",
+              variant: "destructive",
+            })
+          })
         } catch (error) {
-          console.error("Error al cargar las reservas:", error)
+          toast({
+            title: "Error",
+            description: "Error al cargar datos del usuario. Intenta de nuevo.",
+            variant: "destructive",
+          })
         }
       } else {
-        console.error("Usuario no autenticado")
+        setUserData(null)
+        setReservations([])
+        setAttendedEvents([])
       }
+      setIsLoading(false)
     })
 
     return () => unsubscribe()
-  }, [])
+  }, [toast])
 
-
-
-  const upcomingEvents = userEvents.filter((event) => new Date(event.date) > new Date() && event.status !== "cancelled")
-  const completedEvents = userEvents.filter((event) => event.status === "completed")
-  const pendingEvents = userEvents.filter((event) => event.status === "pending")
-
+  // Filtrar reservas pendientes y aprobadas
   const pendingReservations = reservations.filter((reservation) => !reservation.confirmed)
   const approvedReservations = reservations.filter((reservation) => reservation.confirmed)
 
+  // Funciones para íconos y badges de estado
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "confirmed":
@@ -195,6 +278,8 @@ export default function DashboardPage() {
         return <AlertCircle className="h-4 w-4 text-yellow-600" />
       case "cancelled":
         return <XCircle className="h-4 w-4 text-red-600" />
+      case "completed":
+        return <CheckCircle className="h-4 w-4 text-blue-600" />
       default:
         return <AlertCircle className="h-4 w-4 text-gray-600" />
     }
@@ -203,23 +288,55 @@ export default function DashboardPage() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "confirmed":
-        return <Badge className="bg-green-100 text-green-800 border-green-200">Confirmed</Badge>
+        return <Badge className="bg-green-100 text-green-800 border-green-200">Confirmado</Badge>
       case "pending":
-        return <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">Pending Payment</Badge>
+        return <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">Pendiente de Aprobación</Badge>
       case "cancelled":
-        return <Badge className="bg-red-100 text-red-800 border-red-200">Cancelled</Badge>
+        return <Badge className="bg-red-100 text-red-800 border-red-200">Cancelado</Badge>
       case "completed":
-        return <Badge className="bg-blue-100 text-blue-800 border-blue-200">Completed</Badge>
+        return <Badge className="bg-blue-100 text-blue-800 border-blue-200">Completado</Badge>
       default:
         return <Badge variant="secondary">{status}</Badge>
     }
   }
 
-  // Loader mientras se obtienen los datos del usuario
-  if (!userData) {
+  // Loader con skeleton
+  if (isLoading || !userData) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <span>Cargando datos del usuario...</span>
+      <div className="flex min-h-screen flex-col">
+        <NavBar />
+        <main className="flex-1 py-8">
+          <div className="container mx-auto px-4">
+            <div className="flex items-center gap-4 mb-8">
+              <Skeleton className="h-16 w-16 rounded-full" />
+              <div>
+                <Skeleton className="h-8 w-48 mb-2" />
+                <Skeleton className="h-4 w-32" />
+              </div>
+            </div>
+            <div className="grid gap-6 lg:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <Skeleton className="h-6 w-64" />
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-24 w-full mb-4" />
+                  <Skeleton className="h-24 w-full" />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <Skeleton className="h-6 w-64" />
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-24 w-full mb-4" />
+                  <Skeleton className="h-24 w-full" />
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </main>
+        <Footer />
       </div>
     )
   }
@@ -244,154 +361,22 @@ export default function DashboardPage() {
               <div>
                 <h1 className="text-3xl font-bold">
                   Bienvenido de nuevo, {(userData?.firstName || userData?.email || "Usuario").split(" ")[0]}!
-                </h1>                {/* <p className="text-gray-600">Miembro desde {new Date(userData.joinDate).toLocaleDateString()}</p> */}
+                </h1>
               </div>
             </div>
-            {/* <div className="flex gap-2">
-              <Button variant="outline">
-                <Edit className="h-4 w-4 mr-2" />
-                Editar Perfil
-              </Button>
-              <Button variant="outline">
-                <Settings className="h-4 w-4 mr-2" />
-                Configuración
-              </Button>
-            </div> */}
           </div>
 
-          {/* Stats Cards */}
-          {/* <div className="grid gap-6 md:grid-cols-4 mb-8">
-            <Card>
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Eventos Asistidos</p>
-                    <p className="text-2xl font-bold">{(userData.totalEvents ?? 0).toLocaleString()}</p>
-                  </div>
-                  <Calendar className="h-8 w-8 text-blue-600" />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Total Gastado</p>
-                    <p className="text-2xl font-bold">${(userData.totalSpent ?? 0).toLocaleString()}</p>
-                  </div>
-                  <TrendingUp className="h-8 w-8 text-green-600" />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Puntos de Recompensa</p>
-                    <p className="text-2xl font-bold">{(userData.points ?? 0).toLocaleString()}</p>
-                  </div>
-                  <Star className="h-8 w-8 text-yellow-600" />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Nivel de Membresía</p>
-                    <p className="text-2xl font-bold">{userData.level}</p>
-                  </div>
-                  <Award className="h-8 w-8 text-purple-600" />
-                </div>
-              </CardContent>
-            </Card>
-          </div> */}
-
-          {/* Main Content */}
+          {/* Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="overview">Resumen</TabsTrigger>
-              {/* <TabsTrigger value="events">Mis Eventos</TabsTrigger>
+              <TabsTrigger value="events">Mis Eventos</TabsTrigger>
               <TabsTrigger value="certificates">Certificados</TabsTrigger>
-              <TabsTrigger value="profile">Perfil</TabsTrigger> */}
             </TabsList>
 
             <TabsContent value="overview">
               <div className="grid gap-6 lg:grid-cols-2">
-                {/* Upcoming Events */}
-                {/* <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Calendar className="h-5 w-5" />
-                      Eventos Próximos ({upcomingEvents.length})
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {upcomingEvents.length > 0 ? (
-                      <div className="space-y-4">
-                        {upcomingEvents.map((event) => (
-                          <div key={event.id} className="flex items-center gap-4 p-4 border rounded-lg">
-                            <div className="w-16 h-16 bg-gray-200 rounded-lg flex-shrink-0 overflow-hidden">
-                              <Image
-                                src={event.image || "/placeholder.svg"}
-                                alt={event.title}
-                                width={64}
-                                height={64}
-                                className="w-full h-full object-cover"
-                              />
-                            </div>
-                            <div className="flex-1">
-                              <h4 className="font-semibold">{event.title}</h4>
-                              <div className="flex items-center gap-4 text-sm text-gray-600 mt-1">
-                                <div className="flex items-center gap-1">
-                                  <Calendar className="h-3 w-3" />
-                                  <span>{new Date(event.date).toLocaleDateString()}</span>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <Clock className="h-3 w-3" />
-                                  <span>{event.time}</span>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2 mt-2">
-                                {getStatusIcon(event.status)}
-                                {getStatusBadge(event.status)}
-                              </div>
-                            </div>
-                            <div className="flex flex-col gap-2">
-                              <Button variant="outline" size="sm" asChild>
-                                <Link href={`/boletos/${event.ticketId}`}>
-                                  <Ticket className="h-4 w-4 mr-2" />
-                                  Ver Boleto
-                                </Link>
-                              </Button>
-                              {event.status === "pending" && (
-                                <Button variant="outline" size="sm" asChild>
-                                  <Link href={`/ficha-pago/${event.ticketId}`}>
-                                    <Download className="h-4 w-4 mr-2" />
-                                    Comprobante de Pago
-                                  </Link>
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-center py-8">
-                        <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                        <p className="text-gray-600">No hay eventos próximos</p>
-                        <Button asChild className="mt-4">
-                          <Link href="/eventos">Explorar Eventos</Link>
-                        </Button>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card> */}
-
-
+                {/* Pendientes de Aprobación */}
                 {pendingReservations.length > 0 && (
                   <Card className="border-yellow-200 bg-yellow-50">
                     <CardHeader>
@@ -403,34 +388,20 @@ export default function DashboardPage() {
                     <CardContent>
                       <div className="space-y-4">
                         {pendingReservations.map((reservation) => (
-                          <div
+                          <EventCard
                             key={reservation.id}
-                            className="flex items-center gap-4 p-4 bg-white border border-yellow-200 rounded-lg"
-                          >
-                            <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                              <AlertCircle className="h-6 w-6 text-yellow-600" />
-                            </div>
-                            <div className="flex-1">
-                              <h4 className="font-semibold">{reservation.eventTitle}</h4>
-                              <p className="text-sm text-gray-600">
-                                Fecha: {new Date(reservation.eventDate).toLocaleDateString()}
-                              </p>
-                              <p className="text-sm text-yellow-700 font-medium">
-                                Aprobación pendiente
-                              </p>
-                            </div>
-                            <Button size="sm" asChild>
-                              <Link href={`/eventos/${reservation.eventId}`}>
-                                Ver Evento
-                              </Link>
-                            </Button>
-                          </div>
+                            item={reservation}
+                            type="reservation"
+                            getStatusIcon={getStatusIcon}
+                            getStatusBadge={getStatusBadge}
+                          />
                         ))}
                       </div>
                     </CardContent>
                   </Card>
                 )}
 
+                {/* Aprobados */}
                 {approvedReservations.length > 0 && (
                   <Card className="border-green-200 bg-green-50">
                     <CardHeader>
@@ -442,319 +413,81 @@ export default function DashboardPage() {
                     <CardContent>
                       <div className="space-y-4">
                         {approvedReservations.map((reservation) => (
-                          <div
+                          <EventCard
                             key={reservation.id}
-                            className="flex items-center gap-4 p-4 bg-white border border-green-200 rounded-lg"
-                          >
-                            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                              <CheckCircle className="h-6 w-6 text-green-600" />
-                            </div>
-                            <div className="flex-1">
-                              <h4 className="font-semibold">{reservation.eventTitle}</h4>
-                              <p className="text-sm text-gray-600">
-                                Fecha: {new Date(reservation.eventDate).toLocaleDateString()}
-                              </p>
-                              <p className="text-sm text-green-700 font-medium">
-                                Aprobado
-                              </p>
-                            </div>
-                            <Button size="sm" asChild>
-                              <Link href={`/eventos/${reservation.eventId}`}>
-                                Ver Evento
-                              </Link>
-                            </Button>
-                          </div>
+                            item={reservation}
+                            type="reservation"
+                            getStatusIcon={getStatusIcon}
+                            getStatusBadge={getStatusBadge}
+                          />
                         ))}
                       </div>
                     </CardContent>
                   </Card>
                 )}
-                {/* Pending Payments */}
-                {/* {pendingEvents.length > 0 && (
-                  <Card className="border-yellow-200 bg-yellow-50">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2 text-yellow-800">
-                        <AlertCircle className="h-5 w-5" />
-                        {/* Pagos Pendientes ({pendingEvents.length}) *
-                        Pendientes de Aprovación ({pendingEvents.length})
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-4">
-                        {pendingEvents.map((event) => (
-                          <div
-                            key={event.id}
-                            className="flex items-center gap-4 p-4 bg-white border border-yellow-200 rounded-lg"
-                          >
-                            <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                              <AlertCircle className="h-6 w-6 text-yellow-600" />
-                            </div>
-                            <div className="flex-1">
-                              <h4 className="font-semibold">{event.title}</h4>
-                              <p className="text-sm text-gray-600">
-                                {/* Registrado el {new Date(event.registrationDate).toLocaleDateString()} *
-                              </p>
-                              <p className="text-sm text-yellow-700 font-medium">
-                                Pago requerido para confirmar la inscripción
-                              </p>
-                            </div>
-                            <Button size="sm" asChild>
-                              <Link href={`/ficha-pago/${event.ticketId}`}>
-                                <Download className="h-4 w-4 mr-2" />
-                                Pagar Ahora
-                              </Link>
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
+
+                {/* Mensaje si no hay reservas */}
+                {pendingReservations.length === 0 && approvedReservations.length === 0 && (
+                  <Card>
+                    <CardContent className="text-center py-8">
+                      <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                      <p className="text-gray-600">No hay reservas registradas</p>
+                      <Button asChild className="mt-4">
+                        <Link href="/eventos">Explorar Eventos</Link>
+                      </Button>
                     </CardContent>
                   </Card>
-                )} */}
-
-                {/* Recent Activity */}
-                {/* <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <TrendingUp className="h-5 w-5" />
-                      Actividad Reciente
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      {completedEvents.slice(0, 3).map((event) => (
-                        <div key={event.id} className="flex items-center gap-4 p-4 border rounded-lg">
-                          <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <Award className="h-6 w-6 text-green-600" />
-                          </div>
-                          <div className="flex-1">
-                            <h4 className="font-semibold">{event.title}</h4>
-                            <p className="text-sm text-gray-600">
-                              Finalizado el {new Date(event.date).toLocaleDateString()} 
-                            </p>
-                            {event.rating && (
-                              <div className="flex items-center gap-1 mt-1">
-                                {Array.from({ length: 5 }).map((_, i) => (
-                                  <Star
-                                    key={i}
-                                    className={`h-3 w-3 ${i < event.rating ? "text-yellow-400 fill-current" : "text-gray-300"
-                                      }`}
-                                  />
-                                ))}
-                                <span className="text-sm text-gray-600 ml-1">({event.rating}/5)</span>
-                              </div>
-                            )}
-                          </div>
-                          {event.certificateAvailable && (
-                            <Button variant="outline" size="sm" asChild>
-                              <Link href={`/certificados/generar/${event.id}`}>
-                                <Download className="h-4 w-4 mr-2" />
-                                Certificado
-                              </Link>
-                            </Button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card> */}
+                )}
               </div>
             </TabsContent>
 
             <TabsContent value="events">
               <div className="space-y-6">
-                {/* Upcoming Events */}
-                {upcomingEvents.length > 0 && (
+                {/* Eventos Asistidos (Check-in) */}
+                {attendedEvents.length > 0 && (
                   <Card>
                     <CardHeader>
-                      <CardTitle>Eventos Próximos</CardTitle>
+                      <CardTitle>Eventos Asistidos</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="grid gap-4 md:grid-cols-2">
-                        {upcomingEvents.map((event) => (
+                        {attendedEvents.map((event) => (
                           <div key={event.id} className="border rounded-lg p-4">
                             <div className="aspect-video bg-gray-200 rounded-lg mb-4 overflow-hidden">
                               <Image
-                                src={event.image || "/placeholder.svg"}
-                                alt={event.title}
+                                src={event.eventImage}
+                                alt={event.eventTitle}
                                 width={400}
                                 height={225}
                                 className="w-full h-full object-cover"
+                                loading="lazy"
                               />
                             </div>
-                            <h3 className="font-semibold mb-2">{event.title}</h3>
-                            <div className="space-y-2 text-sm text-gray-600">
-                              <div className="flex items-center gap-2">
-                                <Calendar className="h-4 w-4" />
-                                <span>
-                                  {new Date(event.date).toLocaleDateString()} at {event.time}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <MapPin className="h-4 w-4" />
-                                <span>{event.location}</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <Ticket className="h-4 w-4" />
-                                <span>Ticket ID: {event.ticketId}</span>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 mt-3 mb-4">
-                              {getStatusIcon(event.status)}
-                              {getStatusBadge(event.status)}
-                            </div>
-                            <div className="flex gap-2">
-                              <Button variant="outline" size="sm" asChild className="flex-1 bg-transparent">
-                                <Link href={`/eventos/${event.id}`}>
-                                  <Eye className="h-4 w-4 mr-2" />
-                                  Ver Detalles
-                                </Link>
-                              </Button>
-                              <Button size="sm" asChild className="flex-1">
-                                <Link href={`/boletos/${event.ticketId}`}>
-                                  <Ticket className="h-4 w-4 mr-2" />
-                                  Ver Boleto
-                                </Link>
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-
-                {/* Pending Events */}
-                {pendingEvents.length > 0 && (
-                  <Card className="border-yellow-200 bg-yellow-50">
-                    <CardHeader>
-                      <CardTitle className="text-yellow-800">Pending Payment</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid gap-4 md:grid-cols-2">
-                        {pendingEvents.map((event) => (
-                          <div key={event.id} className="bg-white border border-yellow-200 rounded-lg p-4">
-                            <div className="aspect-video bg-gray-200 rounded-lg mb-4 overflow-hidden">
-                              <Image
-                                src={event.image || "/placeholder.svg"}
-                                alt={event.title}
-                                width={400}
-                                height={225}
-                                className="w-full h-full object-cover"
-                              />
-                            </div>
-                            <h3 className="font-semibold mb-2">{event.title}</h3>
-                            <div className="space-y-2 text-sm text-gray-600">
-                              <div className="flex items-center gap-2">
-                                <Calendar className="h-4 w-4" />
-                                <span>
-                                  {new Date(event.date).toLocaleDateString()} at {event.time}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <MapPin className="h-4 w-4" />
-                                <span>{event.location}</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <Ticket className="h-4 w-4" />
-                                <span>Ticket ID: {event.ticketId}</span>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 mt-3 mb-4">
-                              {getStatusIcon(event.status)}
-                              {getStatusBadge(event.status)}
-                            </div>
-                            <div className="flex gap-2">
-                              <Button variant="outline" size="sm" asChild className="flex-1 bg-transparent">
-                                <Link href={`/ficha-pago/${event.ticketId}`}>
-                                  <Download className="h-4 w-4 mr-2" />
-                                  Payment Slip
-                                </Link>
-                              </Button>
-                              <Button size="sm" asChild className="flex-1">
-                                <Link href={`/eventos/${event.id}`}>
-                                  <Eye className="h-4 w-4 mr-2" />
-                                  View Event
-                                </Link>
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-
-                {/* Completed Events */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Completed Events</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      {completedEvents.map((event) => (
-                        <div key={event.id} className="border rounded-lg p-4">
-                          <div className="aspect-video bg-gray-200 rounded-lg mb-4 overflow-hidden">
-                            <Image
-                              src={event.image || "/placeholder.svg"}
-                              alt={event.title}
-                              width={400}
-                              height={225}
-                              className="w-full h-full object-cover"
+                            <EventCard
+                              item={event}
+                              type="attended"
+                              getStatusIcon={getStatusIcon}
+                              getStatusBadge={getStatusBadge}
                             />
                           </div>
-                          <h3 className="font-semibold mb-2">{event.title}</h3>
-                          <div className="space-y-2 text-sm text-gray-600">
-                            <div className="flex items-center gap-2">
-                              <Calendar className="h-4 w-4" />
-                              <span>
-                                {new Date(event.date).toLocaleDateString()} at {event.time}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <MapPin className="h-4 w-4" />
-                              <span>{event.location}</span>
-                            </div>
-                            {event.rating && (
-                              <div className="flex items-center gap-2">
-                                <Star className="h-4 w-4" />
-                                <div className="flex items-center gap-1">
-                                  {Array.from({ length: 5 }).map((_, i) => (
-                                    <Star
-                                      key={i}
-                                      className={`h-3 w-3 ${i < event.rating ? "text-yellow-400 fill-current" : "text-gray-300"
-                                        }`}
-                                    />
-                                  ))}
-                                  <span className="ml-1">({event.rating}/5)</span>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 mt-3 mb-4">
-                            {getStatusIcon(event.status)}
-                            {getStatusBadge(event.status)}
-                          </div>
-                          <div className="flex gap-2">
-                            {event.certificateAvailable && (
-                              <Button variant="outline" size="sm" asChild className="flex-1 bg-transparent">
-                                <Link href={`/certificados/generar/${event.id}`}>
-                                  <Download className="h-4 w-4 mr-2" />
-                                  Certificate
-                                </Link>
-                              </Button>
-                            )}
-                            <Button variant="outline" size="sm" asChild className="flex-1 bg-transparent">
-                              <Link href={`/boletos/${event.ticketId}`}>
-                                <Eye className="h-4 w-4 mr-2" />
-                                View Ticket
-                              </Link>
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Mensaje si no hay eventos asistidos */}
+                {attendedEvents.length === 0 && (
+                  <Card>
+                    <CardContent className="text-center py-8">
+                      <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                      <p className="text-gray-600">No has asistido a eventos aún</p>
+                      <Button asChild className="mt-4">
+                        <Link href="/eventos">Explorar Eventos</Link>
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             </TabsContent>
 
@@ -763,7 +496,7 @@ export default function DashboardPage() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Award className="h-5 w-5" />
-                    My Certificates ({userCertificates.length})
+                    Mis Certificados ({userCertificates.length})
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -778,15 +511,15 @@ export default function DashboardPage() {
                             <div className="flex-1">
                               <h3 className="font-semibold">{cert.eventTitle}</h3>
                               <p className="text-sm text-gray-600">
-                                Issued on {new Date(cert.issueDate).toLocaleDateString()}
+                                Emitido el {new Date(cert.issueDate).toLocaleDateString()}
                               </p>
                             </div>
                           </div>
-                          <div className="text-sm text-gray-600 mb-4">Certificate ID: {cert.certificateId}</div>
+                          <div className="text-sm text-gray-600 mb-4">ID Certificado: {cert.certificateId}</div>
                           <Button asChild className="w-full">
                             <Link href={`/certificados/generar/${cert.eventId}`}>
                               <Download className="h-4 w-4 mr-2" />
-                              Download Certificate
+                              Descargar Certificado
                             </Link>
                           </Button>
                         </div>
@@ -795,104 +528,12 @@ export default function DashboardPage() {
                   ) : (
                     <div className="text-center py-8">
                       <Award className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                      <p className="text-gray-600">No certificates available</p>
-                      <p className="text-sm text-gray-500 mt-2">Complete events to earn certificates</p>
+                      <p className="text-gray-600">No hay certificados disponibles</p>
+                      <p className="text-sm text-gray-500 mt-2">Completa eventos para obtener certificados</p>
                     </div>
                   )}
                 </CardContent>
               </Card>
-            </TabsContent>
-
-            <TabsContent value="profile">
-              <div className="grid gap-6 lg:grid-cols-2">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Profile Information</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center gap-4">
-                      <Avatar className="h-20 w-20">
-                        <AvatarImage src={userData.avatar || "/placeholder.svg"} alt={userData.name} />
-                        <AvatarFallback>
-                          {(userData?.name || userData?.email || "Usuario")
-                            .split(" ")
-                            .map((n: string) => n[0])
-                            .join("")}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-lg">{userData.name}</h3>
-                        <p className="text-gray-600">{userData.email}</p>
-                        <Badge variant="secondary" className="mt-2">
-                          {userData.level} Member
-                        </Badge>
-                      </div>
-                    </div>
-                    <div className="space-y-3">
-                      <div className="flex justify-between">
-                        <span className="text-sm font-medium">Member since</span>
-                        <span className="text-sm text-gray-600">
-                          {new Date(userData.joinDate).toLocaleDateString()}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm font-medium">Events attended</span>
-                        <span className="text-sm text-gray-600">{(userData.totalEvents ?? 0).toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm font-medium">Total spent</span>
-                        <span className="text-sm text-gray-600">${(userData.totalSpent ?? 0).toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm font-medium">Reward points</span>
-                        <span className="text-sm text-gray-600">{(userData.points ?? 0).toLocaleString()}</span>
-                      </div>
-                    </div>
-                    <Button className="w-full">
-                      <Edit className="h-4 w-4 mr-2" />
-                      Edit Profile
-                    </Button>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Membership Progress</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div>
-                      <div className="flex justify-between mb-2">
-                        <span className="text-sm font-medium">Current Level: {userData.level}</span>
-                        <span className="text-sm text-gray-600">Next: Platinum</span>
-                      </div>
-                      <Progress value={75} className="h-2" />
-                      <p className="text-xs text-gray-500 mt-2">Attend 3 more events to reach Platinum level</p>
-                    </div>
-
-                    <div className="space-y-3">
-                      <h4 className="font-medium">Membership Benefits</h4>
-                      <ul className="space-y-2 text-sm text-gray-600">
-                        <li className="flex items-center gap-2">
-                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                          Early access to event registration
-                        </li>
-                        <li className="flex items-center gap-2">
-                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                          10% discount on all events
-                        </li>
-                        <li className="flex items-center gap-2">
-                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                          Priority customer support
-                        </li>
-                        <li className="flex items-center gap-2">
-                          <div className="w-2 h-2 bg-gray-300 rounded-full"></div>
-                          <span className="text-gray-400">VIP networking sessions (Platinum)</span>
-                        </li>
-                      </ul>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
             </TabsContent>
           </Tabs>
         </div>

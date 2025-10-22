@@ -1,76 +1,270 @@
 "use client"
 
+import { useEffect, useState, useRef } from "react"
+import { use } from "react"
+import { doc, getDoc } from "firebase/firestore"
+import { auth, db } from "@/lib/firebase"
 import { NavBar } from "@/components/nav-bar"
 import { Footer } from "@/components/footer"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import {
-  Calendar,
-  Clock,
-  MapPin,
-  User,
-  Mail,
-  Phone,
-  Building,
-  Download,
-  Printer,
-  Share2,
-  Smartphone,
-} from "lucide-react"
+import { Calendar, Clock, MapPin, User, Download } from "lucide-react"
 import Image from "next/image"
+import { useToast } from "@/components/ui/use-toast"
+import { Skeleton } from "@/components/ui/skeleton"
+import { QRCodeCanvas } from "qrcode.react"
+import jsPDF from "jspdf"
 
-// Mock data - in a real app, this would come from a database
-const mockTicket = {
-  id: "TKT-2025-001",
-  eventId: "1",
-  eventTitle: "Web Development Conference 2025",
-  eventDate: "2025-03-15",
-  eventTime: "09:00",
-  eventLocation: "Convention Center Mexico City",
-  eventAddress: "Av. Conscripto 311, Lomas de Sotelo, Miguel Hidalgo, 11200 Ciudad de México, CDMX",
-  eventImage: "/placeholder.svg?height=200&width=400",
-  purchaseDate: "2025-01-15",
-  status: "Confirmed",
-  quantity: 2,
-  unitPrice: 599,
-  total: 1257.9,
+interface TicketData {
+  id: string
+  eventId: string
+  eventTitle: string
+  eventDate: string
+  eventTime: string
+  eventLocation: string
+  eventAddress: string
+  eventImage: string
+  purchaseDate: string
+  status: string
+  quantity: number
+  unitPrice: number
+  total: number
   attendee: {
-    firstName: "Juan",
-    lastName: "Pérez",
-    email: "juan.perez@email.com",
-    phone: "+52 55 1234 5678",
-    company: "Tech Solutions SA",
-  },
-  qrCode: "/placeholder.svg?height=200&width=200",
-  seatNumber: "A-15, A-16",
-  checkInCode: "CHK2025001",
+    firstName: string
+    lastName: string
+    email: string
+    phone: string
+    company?: string
+  }
+  qrCode: string
+  seatNumber: string
+  checkInCode: string
 }
 
-export default function DigitalTicketPage({ params }: { params: { id: string } }) {
-  const handlePrint = () => {
-    window.print()
-  }
+export default function DigitalTicketPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params)
+  const [ticket, setTicket] = useState<TicketData | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const { toast } = useToast()
+  const qrRef = useRef<HTMLCanvasElement>(null)
 
-  const handleDownload = () => {
-    // In a real app, this would generate and download a PDF
-    console.log("Downloading digital ticket...")
-  }
+  useEffect(() => {
+    const fetchTicketData = async () => {
+      setIsLoading(true)
+      try {
+        // Fetch reservation data
+        const reservationDoc = await getDoc(doc(db, "registrations", id))
+        if (!reservationDoc.exists()) {
+          throw new Error("Reservation not found")
+        }
+        const reservationData = reservationDoc.data()
 
-  const handleShare = () => {
-    if (navigator.share) {
-      navigator.share({
-        title: `Digital Ticket - ${mockTicket.eventTitle}`,
-        text: `My ticket for ${mockTicket.eventTitle}`,
-        url: window.location.href,
-      })
+        // Fetch event data
+        const eventDoc = await getDoc(doc(db, "events", reservationData.eventId))
+        const eventData = eventDoc.exists()
+          ? eventDoc.data()
+          : { title: "Evento desconocido", image: "/placeholder.svg" }
+
+        // Fetch user data
+        const userDoc = await getDoc(doc(db, "users", reservationData.userId))
+        const userData = userDoc.exists()
+          ? userDoc.data()
+          : { firstName: "Usuario", lastName: "", email: "", phone: "" }
+
+        // Construct ticket data
+        setTicket({
+          id,
+          eventId: reservationData.eventId,
+          eventTitle: eventData.title || "Evento sin título",
+          eventDate: eventData.date || "2025-01-01",
+          eventTime: eventData.time || "00:00",
+          eventLocation: eventData.location || "Ubicación desconocida",
+          eventAddress: eventData.address || "Sin dirección",
+          eventImage: eventData.image || "/placeholder.svg",
+          purchaseDate: reservationData.createdAt
+            ? new Date(reservationData.createdAt).toISOString().split("T")[0]
+            : "2025-01-01",
+          status: reservationData.confirmed ? "Confirmado" : "Pendiente",
+          quantity: reservationData.quantity || 1,
+          unitPrice: reservationData.unitPrice || 599,
+          total: reservationData.total || reservationData.quantity * reservationData.unitPrice || 599,
+          attendee: {
+            firstName: userData.firstName || "Usuario",
+            lastName: userData.lastName || "",
+            email: userData.email || "",
+            phone: userData.phone || "",
+            company: userData.company,
+          },
+          qrCode: reservationData.qrCode || "/placeholder.svg?height=200&width=200",
+          seatNumber: reservationData.seatNumber || "Sin asignar",
+          checkInCode: reservationData.checkInCode || `CHK${id}`,
+        })
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "No se pudo cargar el boleto. Intenta de nuevo.",
+          variant: "destructive",
+        })
+      } finally {
+        setIsLoading(false)
+      }
     }
+
+    fetchTicketData()
+  }, [id, toast])
+
+  const handleAddToCalendar = () => {
+    console.log("Adding to calendar...")
   }
 
-  const handleAddToWallet = () => {
-    // In a real app, this would generate an Apple Wallet or Google Pay pass
-    console.log("Adding to digital wallet...")
+  const handleGetDirections = () => {
+    console.log("Getting directions...")
+  }
+
+  const handleContactOrganizer = () => {
+    console.log("Contacting organizer...")
+  }
+
+  const handleDownloadPDF = () => {
+    if (!ticket || !qrRef.current) {
+      toast({
+        title: "Error",
+        description: "No se pudo generar el PDF. Intenta de nuevo.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const pdf = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: "a4",
+    })
+
+    // Setting fonts and colors
+    pdf.setFont("helvetica", "normal")
+    pdf.setFontSize(16)
+    pdf.setTextColor(255, 255, 255)
+    pdf.setFillColor(59, 130, 246) // Blue from gradient
+    pdf.rect(0, 0, 210, 30, "F")
+    pdf.text("Boleto Digital", 10, 20)
+
+    // Reset for content
+    pdf.setTextColor(0, 0, 0)
+    pdf.setFontSize(12)
+    pdf.setFillColor(255, 255, 255)
+
+    // Add event details
+    pdf.text(`ID del Boleto: ${ticket.id}`, 10, 40)
+    pdf.text(`Evento: ${ticket.eventTitle}`, 10, 50)
+    pdf.text(
+      `Fecha: ${new Date(ticket.eventDate).toLocaleDateString("es-MX", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })}`,
+      10,
+      60
+    )
+    pdf.text(`Hora: ${ticket.eventTime}`, 10, 70)
+    pdf.text(`Lugar: ${ticket.eventLocation}`, 10, 80)
+    pdf.text(`Dirección: ${ticket.eventAddress}`, 10, 90)
+
+    // Add QR code
+    const qrCanvas = qrRef.current
+    const qrDataUrl = qrCanvas.toDataURL("image/png")
+    pdf.addImage(qrDataUrl, "PNG", 10, 100, 50, 50)
+
+    // Add important information
+    pdf.setFontSize(10)
+    pdf.setTextColor(133, 77, 14) // Yellow-700 for important info
+    pdf.text("Información Importante", 10, 160)
+    pdf.text("• Llega 30 minutos antes de que comience el evento", 10, 170)
+    pdf.text("• Trae una identificación válida para verificación", 10, 180)
+    pdf.text("• Este boleto no es transferible ni reembolsable", 10, 190)
+    pdf.text("• Presenta este código QR en la entrada para el check-in", 10, 200)
+
+    // Save PDF
+    pdf.save(`boleto-${ticket.id}.pdf`)
+  }
+
+  if (isLoading || !ticket) {
+    return (
+      <div className="flex min-h-screen flex-col">
+        <NavBar />
+        <main className="flex-1 py-8">
+          <div className="container mx-auto px-4 max-w-4xl">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <Skeleton className="h-8 w-48 mb-2" />
+                <Skeleton className="h-4 w-32" />
+              </div>
+            </div>
+            <div className="grid gap-6 lg:grid-cols-3">
+              <div className="lg:col-span-2">
+                <Card>
+                  <div className="bg-gray-200 p-6">
+                    <Skeleton className="h-10 w-32 mb-4" />
+                    <Skeleton className="h-8 w-64 mb-2" />
+                    <Skeleton className="h-4 w-48" />
+                    <Skeleton className="h-4 w-48" />
+                    <Skeleton className="h-4 w-48" />
+                  </div>
+                  <CardContent className="p-6">
+                    <Skeleton className="h-48 w-full mb-6" />
+                    <Skeleton className="h-6 w-40 mb-4" />
+                    <Skeleton className="h-4 w-full mb-2" />
+                    <Skeleton className="h-4 w-full mb-2" />
+                    <Skeleton className="h-4 w-full mb-2" />
+                    <Skeleton className="h-4 w-full mb-6" />
+                    <Separator className="my-6" />
+                    <Skeleton className="h-6 w-40 mb-4" />
+                    <Skeleton className="h-4 w-full mb-2" />
+                    <Skeleton className="h-4 w-full mb-6" />
+                    <Separator className="my-6" />
+                    <Skeleton className="h-24 w-full" />
+                  </CardContent>
+                </Card>
+              </div>
+              <div className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <Skeleton className="h-6 w-32 mx-auto" />
+                  </CardHeader>
+                  <CardContent>
+                    <Skeleton className="h-48 w-48 mx-auto mb-4" />
+                    <Skeleton className="h-4 w-64 mx-auto" />
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader>
+                    <Skeleton className="h-6 w-32 mx-auto" />
+                  </CardHeader>
+                  <CardContent>
+                    <Skeleton className="h-8 w-24 mx-auto mb-2" />
+                    <Skeleton className="h-4 w-32 mx-auto" />
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader>
+                    <Skeleton className="h-6 w-32" />
+                  </CardHeader>
+                  <CardContent>
+                    <Skeleton className="h-10 w-full mb-3" />
+                    <Skeleton className="h-10 w-full mb-3" />
+                    <Skeleton className="h-10 w-full" />
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    )
   }
 
   return (
@@ -81,26 +275,7 @@ export default function DigitalTicketPage({ params }: { params: { id: string } }
           {/* Header Actions */}
           <div className="flex justify-between items-center mb-6">
             <div>
-              <h1 className="text-2xl font-bold">Digital Ticket</h1>
-              <p className="text-gray-600">Ticket ID: {mockTicket.id}</p>
-            </div>
-            <div className="flex gap-2 print:hidden">
-              <Button variant="outline" onClick={handleShare}>
-                <Share2 className="h-4 w-4 mr-2" />
-                Share
-              </Button>
-              <Button variant="outline" onClick={handleAddToWallet}>
-                <Smartphone className="h-4 w-4 mr-2" />
-                Add to Wallet
-              </Button>
-              <Button variant="outline" onClick={handlePrint}>
-                <Printer className="h-4 w-4 mr-2" />
-                Print
-              </Button>
-              <Button onClick={handleDownload}>
-                <Download className="h-4 w-4 mr-2" />
-                Download PDF
-              </Button>
+              <h1 className="text-2xl font-bold">Boleto Digital</h1>
             </div>
           </div>
 
@@ -119,19 +294,19 @@ export default function DigitalTicketPage({ params }: { params: { id: string } }
                         height={40}
                         className="mb-2"
                       />
-                      <Badge className="bg-white/20 text-white border-white/30">{mockTicket.status}</Badge>
+                      <Badge className="bg-white/20 text-white border-white/30">{ticket.status}</Badge>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm opacity-90">Ticket ID</p>
-                      <p className="font-mono font-bold">{mockTicket.id}</p>
+                      <p className="text-sm opacity-90">ID del Boleto</p>
+                      <p className="font-mono font-bold">{ticket.id}</p>
                     </div>
                   </div>
-                  <h1 className="text-2xl font-bold mb-2">{mockTicket.eventTitle}</h1>
+                  <h1 className="text-2xl font-bold mb-2">{ticket.eventTitle}</h1>
                   <div className="grid gap-2 text-sm opacity-90">
                     <div className="flex items-center gap-2">
                       <Calendar className="h-4 w-4" />
                       <span>
-                        {new Date(mockTicket.eventDate).toLocaleDateString("es-MX", {
+                        {new Date(ticket.eventDate).toLocaleDateString("es-MX", {
                           weekday: "long",
                           year: "numeric",
                           month: "long",
@@ -141,11 +316,11 @@ export default function DigitalTicketPage({ params }: { params: { id: string } }
                     </div>
                     <div className="flex items-center gap-2">
                       <Clock className="h-4 w-4" />
-                      <span>{mockTicket.eventTime}</span>
+                      <span>{ticket.eventTime}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <MapPin className="h-4 w-4" />
-                      <span>{mockTicket.eventLocation}</span>
+                      <span>{ticket.eventLocation}</span>
                     </div>
                   </div>
                 </div>
@@ -154,38 +329,12 @@ export default function DigitalTicketPage({ params }: { params: { id: string } }
                   {/* Event Image */}
                   <div className="relative h-48 rounded-lg overflow-hidden mb-6">
                     <Image
-                      src={mockTicket.eventImage || "/placeholder.svg"}
-                      alt={mockTicket.eventTitle}
+                      src={ticket.eventImage}
+                      alt={ticket.eventTitle}
                       fill
                       className="object-cover"
+                      loading="lazy"
                     />
-                  </div>
-
-                  {/* Attendee Information */}
-                  <div className="mb-6">
-                    <h3 className="text-lg font-semibold mb-4">Attendee Information</h3>
-                    <div className="grid gap-3 text-sm">
-                      <div className="flex items-center gap-3">
-                        <User className="h-4 w-4 text-gray-400" />
-                        <span className="font-medium">
-                          {mockTicket.attendee.firstName} {mockTicket.attendee.lastName}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <Mail className="h-4 w-4 text-gray-400" />
-                        <span>{mockTicket.attendee.email}</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <Phone className="h-4 w-4 text-gray-400" />
-                        <span>{mockTicket.attendee.phone}</span>
-                      </div>
-                      {mockTicket.attendee.company && (
-                        <div className="flex items-center gap-3">
-                          <Building className="h-4 w-4 text-gray-400" />
-                          <span>{mockTicket.attendee.company}</span>
-                        </div>
-                      )}
-                    </div>
                   </div>
 
                   <Separator className="my-6" />
@@ -193,32 +342,10 @@ export default function DigitalTicketPage({ params }: { params: { id: string } }
                   {/* Ticket Details */}
                   <div className="grid gap-4 md:grid-cols-2">
                     <div>
-                      <h4 className="font-semibold mb-2">Ticket Details</h4>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span>Quantity:</span>
-                          <span>{mockTicket.quantity} tickets</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Seat Numbers:</span>
-                          <span>{mockTicket.seatNumber}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Check-in Code:</span>
-                          <span className="font-mono">{mockTicket.checkInCode}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Purchase Date:</span>
-                          <span>{new Date(mockTicket.purchaseDate).toLocaleDateString()}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <h4 className="font-semibold mb-2">Event Location</h4>
+                      <h4 className="font-semibold mb-2">Ubicación del Evento</h4>
                       <div className="text-sm text-gray-600">
-                        <p className="font-medium">{mockTicket.eventLocation}</p>
-                        <p>{mockTicket.eventAddress}</p>
+                        <p className="font-medium">{ticket.eventLocation}</p>
+                        <p>{ticket.eventAddress}</p>
                       </div>
                     </div>
                   </div>
@@ -227,12 +354,12 @@ export default function DigitalTicketPage({ params }: { params: { id: string } }
 
                   {/* Important Information */}
                   <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                    <h4 className="font-semibold text-yellow-800 mb-2">Important Information</h4>
+                    <h4 className="font-semibold text-yellow-800 mb-2">Información Importante</h4>
                     <ul className="text-sm text-yellow-700 space-y-1">
-                      <li>• Please arrive 30 minutes before the event starts</li>
-                      <li>• Bring a valid ID for verification</li>
-                      <li>• This ticket is non-transferable and non-refundable</li>
-                      <li>• Present this QR code at the entrance for check-in</li>
+                      <li>• Llega 30 minutos antes de que comience el evento</li>
+                      <li>• Trae una identificación válida para verificación</li>
+                      <li>• Este boleto no es transferible ni reembolsable</li>
+                      <li>• Presenta este código QR en la entrada para el check-in</li>
                     </ul>
                   </div>
                 </CardContent>
@@ -244,21 +371,23 @@ export default function DigitalTicketPage({ params }: { params: { id: string } }
               {/* QR Code */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-center">Entry QR Code</CardTitle>
+                  <CardTitle className="text-center">Código QR de Entrada</CardTitle>
                 </CardHeader>
                 <CardContent className="text-center">
-                  <div className="mx-auto w-48 h-48 mb-4 bg-white p-4 rounded-lg border">
-                    <Image
-                      src={mockTicket.qrCode || "/placeholder.svg"}
-                      alt="Entry QR Code"
-                      width={192}
-                      height={192}
-                      className="mx-auto"
+                  <div className="mx-auto w-48 h-48 mb-4 bg-white p-4 rounded-xl border">
+                    <QRCodeCanvas
+                      value={ticket.id}
+                      size={160}
+                      bgColor="#ffffff"
+                      fgColor="#000000"
+                      level="H"
+                      includeMargin={false}
+                      ref={qrRef}
                     />
                   </div>
-                  <p className="text-sm text-gray-600 mb-4">Present this QR code at the event entrance</p>
+                  <p className="text-sm text-gray-600 mb-4">Presenta este código QR en la entrada del evento</p>
                   <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">
-                    Ready for Check-in
+                    Listo para Check-in
                   </Badge>
                 </CardContent>
               </Card>
@@ -266,58 +395,41 @@ export default function DigitalTicketPage({ params }: { params: { id: string } }
               {/* Event Countdown */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-center">Event Countdown</CardTitle>
+                  <CardTitle className="text-center">Cuenta Regresiva del Evento</CardTitle>
                 </CardHeader>
                 <CardContent className="text-center">
                   <div className="text-3xl font-bold text-blue-600 mb-2">
                     {Math.ceil(
-                      (new Date(mockTicket.eventDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24),
+                      (new Date(ticket.eventDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
                     )}{" "}
-                    days
+                    días
                   </div>
-                  <p className="text-sm text-gray-600">until the event</p>
+                  <p className="text-sm text-gray-600">hasta el evento</p>
                 </CardContent>
               </Card>
 
               {/* Quick Actions */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Quick Actions</CardTitle>
+                  <CardTitle>Acciones Rápidas</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <Button variant="outline" className="w-full justify-start bg-transparent">
+                  <Button variant="outline" className="w-full justify-start bg-transparent" onClick={handleAddToCalendar}>
                     <Calendar className="h-4 w-4 mr-2" />
-                    Add to Calendar
+                    Agregar al Calendario
                   </Button>
-                  <Button variant="outline" className="w-full justify-start bg-transparent">
+                  <Button variant="outline" className="w-full justify-start bg-transparent" onClick={handleGetDirections}>
                     <MapPin className="h-4 w-4 mr-2" />
-                    Get Directions
+                    Obtener Indicaciones
                   </Button>
-                  <Button variant="outline" className="w-full justify-start bg-transparent">
+                  <Button variant="outline" className="w-full justify-start bg-transparent" onClick={handleContactOrganizer}>
                     <User className="h-4 w-4 mr-2" />
-                    Contact Organizer
+                    Contactar al Organizador
                   </Button>
-                </CardContent>
-              </Card>
-
-              {/* Support */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Need Help?</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-gray-600 mb-3">Having issues with your ticket or need assistance?</p>
-                  <div className="space-y-2 text-sm">
-                    <p>
-                      <strong>Email:</strong> support@q1eventos.com
-                    </p>
-                    <p>
-                      <strong>Phone:</strong> +52 55 1234 5678
-                    </p>
-                    <p>
-                      <strong>Hours:</strong> Mon-Fri 9AM-6PM
-                    </p>
-                  </div>
+                  <Button variant="outline" className="w-full justify-start bg-transparent" onClick={handleDownloadPDF}>
+                    <Download className="h-4 w-4 mr-2" />
+                    Descargar Boleto como PDF
+                  </Button>
                 </CardContent>
               </Card>
             </div>
