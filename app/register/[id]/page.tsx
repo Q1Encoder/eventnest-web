@@ -106,7 +106,7 @@ export default function PurchasePage({ params }: { params: { id: string } }) {
         userId: currentUser.uid,
         eventId: params.id,
         eventOwnerId: eventData.createdBy || "unknown", // Asignar el ownerId del evento
-        confirmed: false,
+        confirmed: true,
       }
 
       await addDoc(collection(db, "registrations"), registrationData)
