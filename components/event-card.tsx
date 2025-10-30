@@ -117,7 +117,7 @@ export function EventCard({ event }: EventCardProps) {
           <Button
             size="sm"
             className="flex-1 bg-gradient-primary-secondary hover:bg-gradient-primary-secondary-dark"
-            disabled={isFull}
+            // disabled={}
             onClick={handleRegisterClick}
           >
             Registrar
