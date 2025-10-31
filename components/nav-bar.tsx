@@ -33,7 +33,6 @@ import { useToast } from "@/components/ui/use-toast"
 
 const navigationItems = [
   { title: "Eventos", href: "/eventos", description: "Descubre y regístrate en eventos próximos" },
-  /* { title: "Certificados", href: "/certificados", description: "Descarga tus certificados de eventos" }, */
 ]
 
 export function NavBar() {
@@ -186,10 +185,6 @@ export function NavBar() {
                   </div>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
-                    <Link href="/certificados">
-                      <Award className="mr-2 h-4 w-4" />
-                      <span>Certificados</span>
-                    </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleLogout}>
@@ -265,7 +260,7 @@ export function NavBar() {
                         <span>Check-in</span>
                       </Link>
                     </>
-                )}
+                  )}
                 </div>
               </SheetContent>
             </Sheet>
